@@ -866,9 +866,12 @@ button { font: inherit; color: inherit; }
   font-size: 11.5px;
 }
 .footer-disclaimer { color: var(--text-muted); max-width: 640px; line-height: 1.5; }
-.footer-links { color: var(--text-muted); white-space: nowrap; }
+.footer-links { color: var(--text-muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .footer-links a { color: var(--text-dim); }
 .footer-links a:hover { color: var(--accent); }
+.footer-gh { display: inline-flex; align-items: center; gap: 5px; }
+.footer-gh svg { transition: transform 0.15s ease; }
+.footer-gh:hover svg { transform: scale(1.15); }
 
 /* ========================================================================
    Mobile polish
