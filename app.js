@@ -25,6 +25,15 @@ const SLOT_HEADINGS = {
   tools: "TOOLS", format: "FORMAT", clarify: "CLARIFY",
 };
 
+// Optional grading-rubric block — appended verbatim after SUCCESS when the
+// "Append grading rubric" toggle is on. Wording is fixed by the user.
+const GRADE_RUBRIC = `After SUCCESS
+Grade my prompt - === PROMPT ENGINEERING GRADE ===
+    Overall Grade: X/100 (one short sentence why)
+    ✅ 3 Strengths:
+    ❌ 2 Weaknesses:
+    🚀 One-click improved A+ version (copy-paste ready):`;
+
 // Slot suggestion chips (research-backed; specific over generic per
 // Anthropic's role-prompting guidance).
 const SUGGESTIONS = {
@@ -43,6 +52,21 @@ const SUGGESTIONS = {
       "Patient tutor teaching a curious beginner",
       "Devops engineer hardening a Docker + nginx stack",
       "Copy editor enforcing AP style and concision",
+      "Accountant reconciling month-end variances",
+      "CPA explaining tax implications in plain English",
+      "Excel / Google Sheets power user writing formulas and pivot tables",
+      "Word / Google Docs editor formatting a long document for print",
+      "Executive assistant drafting professional correspondence",
+      "Lawyer (non-binding) summarizing a contract in plain language",
+      "Personal finance coach reviewing a budget",
+      "Recipe developer scaling and converting ingredients",
+      "Resume reviewer for a specific industry",
+      "Travel planner optimizing a multi-city itinerary",
+      "Thoughtful listener helping me think through a decision",
+      "History teacher explaining context for a general audience",
+      "Fitness coach designing a beginner program",
+      "Negotiation coach prepping me for a hard conversation",
+      "Project manager building a step-by-step plan from a goal",
     ],
   },
   goal: {
@@ -58,6 +82,14 @@ const SUGGESTIONS = {
       "Plan a step-by-step migration from … to …",
       "Translate the requirements into a technical design",
       "Critique my approach and surface what I'm missing",
+      "Draft an email that …",
+      "Build a budget spreadsheet that tracks …",
+      "Rewrite this paragraph to be clearer and shorter",
+      "Score my résumé against the job posting below",
+      "Plan a weekly meal prep for …",
+      "Outline a chapter that covers …",
+      "Write the Excel formula that …",
+      "Reconcile the transactions below against …",
     ],
   },
   bounds: {
@@ -242,6 +274,159 @@ const TEMPLATES = {
       tools: "", format: "Markdown.", clarify: "Ask 1 question about the reader's level if unclear.",
     },
   },
+
+  "accountant-variance": {
+    title: "Month-end variance analyst",
+    blurb: "Explain budget vs actual variances in business English",
+    state: {
+      role: "Senior accountant performing month-end variance analysis. Pragmatic, plain-language, no jargon unless necessary.",
+      goal: "Explain the budget-vs-actual variances in the table below and call out the ones that need management attention.",
+      context: "- Currency: USD\n- Period: <month / year>\n- Materiality threshold: variances over 5% OR over $1,000\n- The variance table follows in the next message",
+      bounds: "- Don't restate every line — focus on material variances\n- Don't speculate on causes I haven't provided context for; mark as ASK\n- Don't recommend journal entries — explanation only",
+      task: "1. List material variances (over threshold)\n2. For each: amount, % change, likely driver, ASK if unclear\n3. End with a 'For management attention' shortlist (top 3)",
+      success: "Markdown table: Account | Variance $ | Variance % | Likely driver | Action. Followed by 'For management attention' bullet list.",
+      examples: [],
+      tools: "", format: "Markdown table + short summary.", clarify: "Ask up to 2 questions if the period or threshold is unclear.",
+    },
+  },
+
+  "accountant-journal": {
+    title: "Journal-entry drafter",
+    blurb: "Convert a transaction description into a debit/credit journal entry",
+    state: {
+      role: "Staff accountant drafting US-GAAP-compliant journal entries from natural-language transaction descriptions.",
+      goal: "Draft the journal entry for the transaction described below.",
+      context: "- Chart of accounts: standard small-business COA unless I specify otherwise\n- Accrual basis\n- Transaction details follow in the next message",
+      bounds: "- Don't post the entry — draft only\n- Don't invent account numbers; use account names if numbers aren't given\n- Flag any assumption you had to make",
+      task: "1. Identify the accounts affected\n2. Determine debit / credit and amount for each\n3. Write a one-line memo\n4. List any assumptions",
+      success: "Markdown table: Account | Debit | Credit | Memo. Followed by an 'Assumptions' bullet list.",
+      examples: [{
+        input: "Bought a new laptop for $1,800 on the company credit card.",
+        output: "| Account | Debit | Credit | Memo |\n|---|---|---|---|\n| Computer Equipment | 1,800.00 |  | New laptop |\n|  Credit Card Payable |  | 1,800.00 | Charged to company card |\n\n**Assumptions:** Laptop capitalized (above typical $500 threshold).",
+      }],
+      tools: "", format: "Markdown table.", clarify: "",
+    },
+  },
+
+  "excel-formula": {
+    title: "Excel / Sheets formula writer",
+    blurb: "Describe a goal, get a formula plus a plain-language explanation",
+    state: {
+      role: "Excel and Google Sheets power user fluent in modern dynamic-array functions (FILTER, XLOOKUP, LET, LAMBDA).",
+      goal: "Write the formula that accomplishes the goal described below.",
+      context: "- Target product: <Excel 365 / Google Sheets / Excel 2019 / etc.>\n- Source data is in: <range or sheet name>\n- A small sample of the data follows in the next message",
+      bounds: "- Don't use VBA or Apps Script unless I ask\n- Don't assume helper columns exist — solve in one formula if reasonable\n- If the target product lacks a function, propose the closest equivalent and say so",
+      task: "1. State your understanding of the goal in one sentence\n2. Give the formula in a code block\n3. Explain each part of the formula in plain English\n4. Note 1–2 edge cases the formula does and doesn't handle",
+      success: "Markdown with: Understanding, Formula (code block), Explanation, Edge cases.",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "Ask 1 question if the target product (Excel vs Sheets) is unclear.",
+    },
+  },
+
+  "excel-cleanup": {
+    title: "Spreadsheet cleanup plan",
+    blurb: "Turn a messy sheet into a step-by-step cleanup checklist",
+    state: {
+      role: "Data analyst who specializes in cleaning messy spreadsheets without writing code.",
+      goal: "Produce a step-by-step cleanup plan I can follow in Excel or Google Sheets.",
+      context: "- Tool: <Excel / Sheets>\n- The sheet has roughly <N> rows and <M> columns\n- A description of the messiness (mixed dates, merged cells, stray text, etc.) follows",
+      bounds: "- Don't write macros — manual / formula steps only\n- Don't recommend deleting rows without a check step first\n- Preserve the original data — work on a copy",
+      task: "1. List the problems you see\n2. For each, give the cleanup step (formula, find/replace, sort, filter)\n3. End with a verification step that proves the cleanup worked",
+      success: "Markdown checklist grouped by problem. Each step has a 'how' (specific menu / formula).",
+      examples: [],
+      tools: "", format: "Markdown checklist.", clarify: "",
+    },
+  },
+
+  "word-formatter": {
+    title: "Document formatter (Word / Docs)",
+    blurb: "Apply consistent headings, lists, and styling to a long document",
+    state: {
+      role: "Document production specialist who formats long Word / Google Docs documents for print and screen.",
+      goal: "Reformat the document below for consistency and readability without changing the wording.",
+      context: "- Target: <Word / Google Docs / either>\n- Use case: <print / screen / both>\n- Document follows in the next message",
+      bounds: "- Don't rewrite content — formatting only\n- Don't add content that isn't there (no new sections, no filler)\n- Preserve any quoted text or code verbatim",
+      task: "1. Apply a clear heading hierarchy (H1 / H2 / H3)\n2. Convert run-on paragraphs into lists where appropriate\n3. Standardize bullet style and spacing\n4. Insert a table of contents placeholder at the top",
+      success: "The reformatted document in Markdown, followed by a 'Changes made' bullet list (formatting only, no content changes).",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "Ask 1 question about target medium (print vs screen) if unclear.",
+    },
+  },
+
+  "word-editor": {
+    title: "Plain-language memo editor",
+    blurb: "Tighten a long memo for a non-expert audience",
+    state: {
+      role: "Editor specializing in plain language for non-expert business readers. Short sentences, active voice, concrete nouns.",
+      goal: "Rewrite the memo below for a non-expert audience without losing accuracy.",
+      context: "- Audience: <who is reading this>\n- Tone: <formal / friendly / executive>\n- Memo follows in the next message",
+      bounds: "- Don't change facts, numbers, or names\n- Don't add a summary the original doesn't justify\n- Keep length within ±20% of original unless I say otherwise",
+      task: "1. Identify the 3 biggest clarity problems\n2. Rewrite the memo top to bottom\n3. List the changes you made and why",
+      success: "Markdown: rewritten memo, then '## Changes' section.",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "",
+    },
+  },
+
+  "email-drafter": {
+    title: "Professional email drafter",
+    blurb: "Turn rough bullets into a polished email",
+    state: {
+      role: "Executive assistant drafting professional email on behalf of a busy executive.",
+      goal: "Draft a professional email from the bullet-point intent below.",
+      context: "- Sender: <name / role>\n- Recipient: <name / role / relationship>\n- Tone: <warm / formal / firm but kind>\n- Bullet-point intent follows",
+      bounds: "- Don't invent facts not in the bullets\n- Don't be sycophantic in the opener\n- Keep under 150 words unless I say otherwise",
+      task: "1. Subject line (specific, scannable)\n2. Opener (1 line, no fluff)\n3. Body (the asks / info, in priority order)\n4. Close (clear next step)",
+      success: "A copy-ready email with Subject, Body, and Sign-off. Under 150 words.",
+      examples: [],
+      tools: "", format: "Plain email format.", clarify: "Ask 1 question if recipient relationship is unclear.",
+    },
+  },
+
+  "resume-tailor": {
+    title: "Résumé tailorer",
+    blurb: "Rewrite résumé bullets to match a specific job posting",
+    state: {
+      role: "Career coach who tailors résumés for specific job postings. Honest, no embellishment.",
+      goal: "Tailor my résumé bullets to the job posting below.",
+      context: "- Job posting follows in the next message\n- My current résumé bullets follow after that\n- Industry: <industry>\n- Years of experience: <N>",
+      bounds: "- Don't invent experience I don't have\n- Don't use empty buzzwords (synergy, leverage, ninja)\n- Keep each bullet under 2 lines",
+      task: "1. Extract the top 5 keywords / skills from the posting\n2. For each of my bullets, rewrite to emphasize matching skills (without lying)\n3. Flag any gap where my résumé doesn't match the posting",
+      success: "Markdown with: Top keywords, Rewritten bullets (before / after), Gaps to address.",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "",
+    },
+  },
+
+  "budget-coach": {
+    title: "Personal budget coach",
+    blurb: "Review a monthly budget and suggest realistic adjustments",
+    state: {
+      role: "Personal finance coach. Practical, non-judgmental, focused on small wins.",
+      goal: "Review the monthly budget below and suggest realistic adjustments.",
+      context: "- My main goals: <save for X / pay down Y / build emergency fund>\n- Fixed vs variable expenses noted in the table\n- Budget table follows",
+      bounds: "- Don't recommend investments or specific products\n- Don't suggest cutting essentials below a livable level\n- Stay within the categories I've given — don't invent new income",
+      task: "1. Summarize where money is going (categories as % of income)\n2. Identify 2–3 categories with room to adjust\n3. Suggest a specific, dollar-amount change for each\n4. Project the impact over 3 / 6 / 12 months",
+      success: "Markdown with: Snapshot, Suggested adjustments (with $ amounts), Projection table.",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "Ask 1 question if my goals aren't clear.",
+    },
+  },
+
+  "recipe-scaler": {
+    title: "Recipe scaler & substituter",
+    blurb: "Resize a recipe and swap ingredients you don't have",
+    state: {
+      role: "Recipe developer comfortable with scaling, unit conversion, and ingredient substitution.",
+      goal: "Scale the recipe below to <N servings> and substitute the ingredients I'm missing.",
+      context: "- Target servings: <N>\n- Ingredients I'm missing or want to swap: <list>\n- Dietary constraints: <none / vegetarian / gluten-free / etc.>\n- Recipe follows in the next message",
+      bounds: "- Don't change the dish into something else — keep the spirit\n- Don't suggest substitutes that change cook time without saying so\n- Flag any substitution that meaningfully changes flavor or texture",
+      task: "1. Rewrite the ingredient list at the new scale\n2. Adjust cook times / pan sizes as needed\n3. List substitutions with notes (1:1? adjust by X?)\n4. Note any expected flavor / texture change",
+      success: "Markdown with: Scaled ingredients, Adjusted method notes, Substitutions table.",
+      examples: [],
+      tools: "", format: "Markdown.", clarify: "",
+    },
+  },
 };
 
 // Prompt archaeology — famous, publicly documented prompts decomposed
@@ -386,6 +571,7 @@ const el = {
   lifetime: $("lifetimeCount"),
   templatesList: $("templatesList"),
   archaeologyList: $("archaeologyList"),
+  gradeToggle: $("gradeToggle"),
 };
 
 const fields = Object.fromEntries(
@@ -429,6 +615,7 @@ function readForm() {
     out[slot] = (fields[slot]?.value || "").trim();
   }
   out.examples = readExamples();
+  out.gradeAppend = !!el.gradeToggle?.checked;
   return out;
 }
 
@@ -437,6 +624,8 @@ function writeForm(state) {
     if (fields[slot]) fields[slot].value = state[slot] || "";
   }
   writeExamples(state.examples || []);
+  if (el.gradeToggle) el.gradeToggle.checked = !!state.gradeAppend;
+  autoGrowAll();
 }
 
 function clearForm() {
@@ -444,6 +633,8 @@ function clearForm() {
     if (fields[slot]) fields[slot].value = "";
   }
   writeExamples([]);
+  if (el.gradeToggle) el.gradeToggle.checked = false;
+  autoGrowAll();
 }
 
 function hasAnyContent(state) {
@@ -573,6 +764,7 @@ function renderMarkdown(state) {
   if (!state.success && state.examples?.length && !parts.some(p => p.startsWith("## EXAMPLES"))) {
     parts.push(renderExamplesMd(state.examples));
   }
+  if (state.gradeAppend) parts.push(GRADE_RUBRIC);
   return parts.join("\n\n");
 }
 
@@ -597,6 +789,7 @@ function renderXml(state) {
   if (!state.success && state.examples?.length && !parts.some(p => p.startsWith("<examples>"))) {
     parts.push(renderExamplesXml(state.examples));
   }
+  if (state.gradeAppend) parts.push(`<grade_rubric>\n${GRADE_RUBRIC}\n</grade_rubric>`);
   return parts.join("\n\n");
 }
 
@@ -721,7 +914,33 @@ function renderLifetime() {
 // ---------- bind core input listeners ----------
 for (const slot of STRING_SLOTS) {
   fields[slot]?.addEventListener("input", updatePreview);
+  fields[slot]?.addEventListener("input", (e) => autoGrow(e.target));
 }
+el.gradeToggle?.addEventListener("change", updatePreview);
+
+// ---------- auto-grow textareas ----------
+// Lets each textarea expand smoothly as the user types. CSS caps the
+// max-height so a runaway paste doesn't push the form off-screen.
+function autoGrow(ta) {
+  if (!ta || ta.tagName !== "TEXTAREA") return;
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
+}
+function autoGrowAll() {
+  document.querySelectorAll(".field-card textarea, .example-pair textarea")
+    .forEach(autoGrow);
+}
+// Watch dynamically-added example textareas too.
+const _exampleObserver = new MutationObserver(() => {
+  document.querySelectorAll(".example-pair textarea").forEach((ta) => {
+    if (ta.dataset.autogrowBound) return;
+    ta.dataset.autogrowBound = "1";
+    ta.addEventListener("input", () => autoGrow(ta));
+    autoGrow(ta);
+  });
+});
+const _examplesHost = document.getElementById("examplesList");
+if (_examplesHost) _exampleObserver.observe(_examplesHost, { childList: true, subtree: true });
 
 // ---------- suggestion chips (per-slot) ----------
 function renderSuggestions() {
@@ -797,6 +1016,7 @@ el.copyTxt.addEventListener("click", () => {
     }
     if (state[slot]) parts.push(`${SLOT_HEADINGS[slot]}:\n${state[slot]}`);
   }
+  if (state.gradeAppend) parts.push(GRADE_RUBRIC);
   copyText(parts.join("\n\n"), el.copyTxt);
 });
 
@@ -1002,3 +1222,4 @@ if (!loadedFromHash) restoreCurrent();
 renderDrafts();
 renderLifetime();
 updatePreview();
+autoGrowAll();

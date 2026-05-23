@@ -362,21 +362,63 @@ button { font: inherit; color: inherit; }
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   font-family: var(--mono);
   font-size: 16px;
   line-height: 1.55;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   -webkit-appearance: none;
   -webkit-text-size-adjust: 100%;
+  min-height: 84px;
+  max-height: clamp(280px, 55vh, 640px);
 }
+/* Per-slot first-render min-heights: short for one-liners, taller for
+   slots that usually hold lists. Auto-grow takes over from there. */
+.field-card[data-slot="role"] textarea,
+.field-card[data-slot="goal"] textarea,
+.field-card[data-slot="tools"] textarea,
+.field-card[data-slot="format"] textarea,
+.field-card[data-slot="clarify"] textarea { min-height: 72px; }
+.field-card[data-slot="context"] textarea,
+.field-card[data-slot="task"] textarea { min-height: 132px; }
+.field-card[data-slot="bounds"] textarea,
+.field-card[data-slot="success"] textarea { min-height: 108px; }
 .field-card.addon textarea { background: var(--bg-card); }
 .field-card textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
+
+/* Grade rubric toggle, lives in the preview header */
+.grade-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--bg-card-2, var(--bg-card));
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.grade-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.grade-toggle:hover { border-color: var(--accent); color: var(--text); }
+.grade-toggle:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.grade-toggle strong { color: var(--text); font-weight: 600; }
 
 .addons-card {
   background: var(--bg-card);
@@ -547,13 +589,16 @@ button { font: inherit; color: inherit; }
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-family: var(--mono);
   font-size: 14px;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
   outline: none;
   transition: border-color 0.15s ease;
+  min-height: 56px;
+  max-height: clamp(220px, 45vh, 480px);
 }
 .example-input:focus, .example-output:focus { border-color: var(--accent); }
 .add-example-btn {
@@ -890,7 +935,9 @@ button { font: inherit; color: inherit; }
   .hero { padding: 36px 0 24px; padding-top: calc(36px + env(safe-area-inset-top)); }
   .hero-inner { flex-direction: column; align-items: flex-start; }
   .hero-meta { flex-direction: row; align-items: center; flex-wrap: wrap; }
-  .field-card { padding: 12px 14px; }
+  .field-card { padding: 14px 14px; }
+  .field-card textarea { padding: 12px; max-height: 60vh; }
+  .grade-toggle { font-size: 12px; padding: 8px; }
   .preview-card { padding: 14px; }
   .preview-text { font-size: 12px; padding: 12px; min-height: 180px; }
   .preview-actions { flex-direction: column; }
