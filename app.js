@@ -640,8 +640,10 @@ function updatePreview() {
     showToast("🏆 New personal best!");
   }
 
-  // Token estimate
-  el.tokenEst.textContent = `~${Math.max(0, Math.round(out.length / 4))} tokens`;
+  // Token estimate (rough — chars ÷ 4 splits the difference between
+  // Anthropic ~3.5 and OpenAI ~4. Real count varies per model.)
+  const tokens = Math.max(0, Math.round(out.length / 4));
+  el.tokenEst.innerHTML = `~${tokens} tokens <span class="token-est-suffix">· rough</span>`;
 
   // Persist current draft
   try { localStorage.setItem(CONFIG.currentKey, JSON.stringify(state)); } catch {}

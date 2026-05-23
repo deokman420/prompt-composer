@@ -10,7 +10,7 @@ Built so anyone trying to write a better prompt has a place to *think* in the ri
 
 1. **Six core slots — R-G-C-B-T-S** — Role, Goal, Context, Bounds, Task, Success. Each with a one-line hint and clickable suggestion chips (specific, research-backed — e.g., "Senior data analyst" not "expert").
 2. **Examples slot** — up to 3 input/output pairs. Few-shot is the single highest-impact technique per Anthropic's published research; making it a first-class slot reflects that.
-3. **Live preview, Markdown ↔ XML** — see the composed prompt update on every keystroke; toggle output between markdown headings and XML tags (XML is the Claude-preferred shape for mixed-content prompts).
+3. **Live preview, Markdown ↔ XML** — see the composed prompt update on every keystroke; toggle output between markdown headings and XML tags (XML is the Claude-preferred shape for mixed-content prompts). A rough token estimate (chars ÷ 4) is shown above the preview — labeled `· rough` because real tokenizers differ per model (Anthropic ~3.5, OpenAI ~4, Llama denser on code). Use the provider's playground for exact counts.
 4. **Composition score** — local, structural rubric (0–100). Honest about what it measures: completeness and structure, not quality. Tracks personal best + lifetime count.
 5. **Starter templates** — 8 complete pro-prompts (Code reviewer, Bug repro, Meeting actions, Doc rewriter, ADR, Email triage, Test plan, Tutorial writer).
 6. **Prompt Archaeology** — 6 famous prompts decomposed into the R-G-C-B-T-S frame: Claude system prompt, v0 by Vercel, Cursor IDE, GitHub Copilot, ReAct (Yao 2022), Chain-of-Thought (Wei 2022). Reverse-engineering practice — see how the pros structure intent.

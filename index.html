@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
 
@@ -195,7 +195,7 @@
       <aside class="preview-card">
         <div class="preview-header">
           <h2>Live preview</h2>
-          <span id="tokenEst" class="token-est">~0 tokens</span>
+          <span id="tokenEst" class="token-est" title="Rough estimate (chars ÷ 4). Real count varies ±20–30% by model — Anthropic averages ~3.5 chars/token, OpenAI ~4, Llama denser on code. For exact counts, paste into the provider's playground.">~0 tokens <span class="token-est-suffix">· rough</span></span>
         </div>
         <div class="fmt-toggle" role="tablist" aria-label="Output format">
           <button class="fmt-tab is-active" type="button" role="tab" data-fmt="markdown">Markdown</button>
@@ -246,7 +246,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=1"></script>
+  <script src="app.js?v=2"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>
