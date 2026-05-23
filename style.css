@@ -366,14 +366,12 @@ button { font: inherit; color: inherit; }
   font-family: var(--mono);
   font-size: 16px;
   line-height: 1.55;
-  resize: none;
-  overflow-y: auto;
+  resize: vertical;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   -webkit-appearance: none;
   -webkit-text-size-adjust: 100%;
   min-height: 84px;
-  max-height: clamp(280px, 55vh, 640px);
 }
 /* Per-slot first-render min-heights: short for one-liners, taller for
    slots that usually hold lists. Auto-grow takes over from there. */
@@ -593,12 +591,10 @@ button { font: inherit; color: inherit; }
   font-family: var(--mono);
   font-size: 14px;
   line-height: 1.5;
-  resize: none;
-  overflow-y: auto;
+  resize: vertical;
   outline: none;
   transition: border-color 0.15s ease;
   min-height: 56px;
-  max-height: clamp(220px, 45vh, 480px);
 }
 .example-input:focus, .example-output:focus { border-color: var(--accent); }
 .add-example-btn {
@@ -936,7 +932,7 @@ button { font: inherit; color: inherit; }
   .hero-inner { flex-direction: column; align-items: flex-start; }
   .hero-meta { flex-direction: row; align-items: center; flex-wrap: wrap; }
   .field-card { padding: 14px 14px; }
-  .field-card textarea { padding: 12px; max-height: 60vh; }
+  .field-card textarea { padding: 12px; }
   .grade-toggle { font-size: 12px; padding: 8px; }
   .preview-card { padding: 14px; }
   .preview-text { font-size: 12px; padding: 12px; min-height: 180px; }
