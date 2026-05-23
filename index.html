@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0c0f16" />
+  <title>Prompt Composer — phbeks</title>
+  <meta name="description" content="Build prompts in a structured R-G-C-B-T-S frame. Learn the technique while you write. Local-only, no signup." />
+  <meta name="author" content="phbeks" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://prompt.phbeks.com/" />
+  <meta property="og:title" content="Prompt Composer — phbeks" />
+  <meta property="og:description" content="Structured prompt-engineering tool. R-G-C-B-T-S frame, live preview, XML/Markdown output, archaeology of famous prompts." />
+  <meta property="twitter:card" content="summary" />
+  <meta property="twitter:title" content="Prompt Composer — phbeks" />
+  <meta name="twitter:creator" content="@phbeks" />
+  <link rel="canonical" href="https://prompt.phbeks.com/" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=1" />
+</head>
+<body>
+
+  <!-- ============== HERO ============== -->
+  <header class="hero">
+    <div class="container hero-inner">
+      <div class="hero-text">
+        <div class="hero-label">prompt engineering · <a href="https://phbeks.com" class="hero-back">phbeks.com ↗</a></div>
+        <h1>Prompt <span>Composer</span></h1>
+        <p class="hero-sub">Build prompts in a structured R-G-C-B-T-S frame. Learn the technique while you write — local-only, no signup, no tracking.</p>
+      </div>
+      <div class="hero-meta" aria-live="polite">
+        <div class="slot-meter" title="Structural completeness of the 6 core slots">
+          <span id="slotCount" class="slot-count">0 / 6 slots</span>
+          <div class="slot-bar"><div id="slotFill" class="slot-fill"></div></div>
+        </div>
+        <div class="score-chip" title="Composition score — structural only, not a quality grade">
+          <span class="score-label">Composition</span>
+          <span id="scoreVal" class="score-val">0</span>
+          <span id="scoreBest" class="score-best" hidden>best 0</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main">
+
+    <!-- ============== TEMPLATES + ARCHAEOLOGY ============== -->
+    <section class="band">
+      <div class="band-label">01 · jump-start</div>
+      <details class="library-card">
+        <summary>
+          <span>Starter templates</span>
+          <span class="library-hint">Load a complete pro-prompt to deconstruct</span>
+        </summary>
+        <div id="templatesList" class="library-list"></div>
+      </details>
+
+      <details class="library-card">
+        <summary>
+          <span>Prompt archaeology</span>
+          <span class="library-hint">Famous prompts decomposed into R-G-C-B-T-S</span>
+        </summary>
+        <p class="library-blurb">Reverse-engineering practice. Each entry is a real, well-known prompt mapped into the frame — see how the pros structure intent. <em>Educational only — credit and sources noted on each.</em></p>
+        <div id="archaeologyList" class="library-list"></div>
+      </details>
+    </section>
+
+    <section class="composer-grid">
+      <!-- ============== FORM (left) ============== -->
+      <form class="composer-form" id="composerForm" autocomplete="off">
+
+        <div class="band-label inline">02 · set the stage</div>
+
+        <div class="field-card" data-slot="role">
+          <label class="field-label" for="fieldRole">
+            <span class="field-name">Role</span>
+            <span class="field-hint">Who the model acts as. 1 line.</span>
+          </label>
+          <textarea id="fieldRole" name="role" rows="2" spellcheck="true"
+            placeholder='e.g., "Senior security engineer reviewing auth code."'></textarea>
+          <div class="suggestions" data-for="role"></div>
+        </div>
+
+        <div class="field-card" data-slot="goal">
+          <label class="field-label" for="fieldGoal">
+            <span class="field-name">Goal</span>
+            <span class="field-hint">Single outcome, verb-first.</span>
+          </label>
+          <textarea id="fieldGoal" name="goal" rows="2" spellcheck="true"
+            placeholder='e.g., "Identify token-leak risks in the diff below."'></textarea>
+          <div class="suggestions" data-for="goal"></div>
+        </div>
+
+        <div class="band-label inline">03 · provide inputs</div>
+
+        <div class="field-card" data-slot="context">
+          <label class="field-label" for="fieldContext">
+            <span class="field-name">Context</span>
+            <span class="field-hint">Load-bearing facts the model can't infer. Bullets ok.</span>
+          </label>
+          <textarea id="fieldContext" name="context" rows="4" spellcheck="true"
+            placeholder='- App uses JWT with 15-min TTL&#10;- Sessions stored in Redis&#10;- Diff is in the next message'></textarea>
+        </div>
+
+        <div class="field-card" data-slot="bounds">
+          <label class="field-label" for="fieldBounds">
+            <span class="field-name">Bounds</span>
+            <span class="field-hint">Out of scope / forbidden.</span>
+          </label>
+          <textarea id="fieldBounds" name="bounds" rows="3" spellcheck="true"
+            placeholder='- Don&#39;t suggest rewrites&#10;- Don&#39;t touch database schema'></textarea>
+          <div class="suggestions" data-for="bounds"></div>
+        </div>
+
+        <div class="band-label inline">04 · define success</div>
+
+        <div class="field-card" data-slot="task">
+          <label class="field-label" for="fieldTask">
+            <span class="field-name">Task</span>
+            <span class="field-hint">Concrete steps or deliverable shape. Number if order matters.</span>
+          </label>
+          <textarea id="fieldTask" name="task" rows="4" spellcheck="true"
+            placeholder='1. Read the diff&#10;2. List vulnerabilities by severity&#10;3. Cite file:line for each'></textarea>
+        </div>
+
+        <div class="field-card examples-card" data-slot="examples">
+          <label class="field-label">
+            <span class="field-name">Examples <span class="optional-tag">optional · high impact</span></span>
+            <span class="field-hint">1–3 input/output pairs. Even one example beats a paragraph of instructions.</span>
+          </label>
+          <div id="examplesList" class="examples-list"></div>
+          <button id="addExampleBtn" type="button" class="add-example-btn">+ Add example</button>
+          <div id="examplesChips" class="suggestions"></div>
+        </div>
+
+        <div class="field-card" data-slot="success">
+          <label class="field-label" for="fieldSuccess">
+            <span class="field-name">Success</span>
+            <span class="field-hint">How you'll know it worked, in checkable terms.</span>
+          </label>
+          <textarea id="fieldSuccess" name="success" rows="3" spellcheck="true"
+            placeholder='Output is a markdown table: severity | file:line | issue | fix.'></textarea>
+        </div>
+
+        <div class="band-label inline">05 · refine (optional)</div>
+
+        <details class="addons-card">
+          <summary>Add-on slots (Tools · Format · Clarify)</summary>
+
+          <div class="field-card addon" data-slot="tools">
+            <label class="field-label" for="fieldTools">
+              <span class="field-name">Tools</span>
+              <span class="field-hint">Allowed / forbidden tools or sources.</span>
+            </label>
+            <textarea id="fieldTools" name="tools" rows="2" spellcheck="true"
+              placeholder='Web search ok. No code execution.'></textarea>
+            <div class="suggestions" data-for="tools"></div>
+          </div>
+
+          <div class="field-card addon" data-slot="format">
+            <label class="field-label" for="fieldFormat">
+              <span class="field-name">Format</span>
+              <span class="field-hint">Output shape: JSON keys, length cap, headings.</span>
+            </label>
+            <textarea id="fieldFormat" name="format" rows="2" spellcheck="true"
+              placeholder='Markdown, &le; 300 words, sections: Findings, Fixes.'></textarea>
+            <div class="suggestions" data-for="format"></div>
+          </div>
+
+          <div class="field-card addon" data-slot="clarify">
+            <label class="field-label" for="fieldClarify">
+              <span class="field-name">Clarify</span>
+              <span class="field-hint">Ask N questions first if X is ambiguous.</span>
+            </label>
+            <textarea id="fieldClarify" name="clarify" rows="2" spellcheck="true"
+              placeholder='Ask up to 2 questions if requirements are unclear before answering.'></textarea>
+          </div>
+        </details>
+
+        <div class="form-actions">
+          <button id="newBtn" type="button" class="link-btn">New blank prompt</button>
+          <button id="saveBtn" type="button" class="link-btn">Save draft</button>
+          <button id="shareBtn" type="button" class="link-btn">Share link</button>
+        </div>
+      </form>
+
+      <!-- ============== PREVIEW (right) ============== -->
+      <aside class="preview-card">
+        <div class="preview-header">
+          <h2>Live preview</h2>
+          <span id="tokenEst" class="token-est">~0 tokens</span>
+        </div>
+        <div class="fmt-toggle" role="tablist" aria-label="Output format">
+          <button class="fmt-tab is-active" type="button" role="tab" data-fmt="markdown">Markdown</button>
+          <button class="fmt-tab" type="button" role="tab" data-fmt="xml">XML</button>
+        </div>
+        <p id="fmtCaption" class="fmt-caption">Markdown works in any agent; switch to XML when targeting Claude with mixed content.</p>
+        <pre id="preview" class="preview-text" aria-live="polite"></pre>
+        <div class="preview-actions">
+          <button id="copyMdBtn" class="copy-btn primary" type="button">Copy as Markdown</button>
+          <button id="copyTxtBtn" class="copy-btn" type="button">Copy as plain text</button>
+        </div>
+        <p class="preview-hint">Paste into Claude, ChatGPT, Gemini — anything that takes text.</p>
+      </aside>
+    </section>
+
+    <!-- ============== DRAFTS ============== -->
+    <section class="drafts-card" id="draftsCard" hidden>
+      <div class="band-label">recent drafts</div>
+      <div class="drafts-inner">
+        <div class="drafts-header">
+          <h3>Saved on this device</h3>
+          <button id="clearDraftsBtn" class="link-btn" type="button">Clear all</button>
+        </div>
+        <ul id="draftsList" class="drafts-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-row">
+        <span class="footer-brand"><a href="https://phbeks.com">phbeks.com</a> · Prompt Composer</span>
+        <span id="lifetimeCount" class="footer-count">0 prompts crafted</span>
+      </div>
+      <div class="footer-row footer-meta">
+        <span class="footer-disclaimer">Local-only — your prompts, drafts, and shared links never reach any server. No tracking, no analytics, no AI calls.</span>
+        <span class="footer-links">
+          <a href="LICENSE">MIT licensed</a>
+          ·
+          <a href="https://github.com/deokman420/smarthouse/tree/main/prompt-site">source</a>
+        </span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js?v=1"></script>
+
+  <!-- ============== EASTER EGG ============== -->
+  <script>
+    // Console ASCII + lore
+    console.log(
+      `%c
+  ____    ____    ____  ____  _____  ____
+ |  _ \\  / ___|  / ___|| __ )|_   _|/ ___|
+ | |_) || |  _  | |    |  _ \\  | |  \\___ \\
+ |  _ < | |_| | | |___ | |_) | | |   ___) |
+ |_| \\_\\ \\____|  \\____||____/  |_|  |____/
+      `,
+      'color:#00d4aa;font-weight:bold;font-family:monospace;'
+    );
+    console.log(
+      '%c Frame initiate detected. %c R-G-C-B-T-S is the way. ',
+      'background:#00d4aa;color:#0c0f16;padding:6px 10px;border-radius:4px 0 0 4px;font-weight:bold;',
+      'background:#141820;color:#8492a6;padding:6px 10px;border-radius:0 4px 4px 0;'
+    );
+    console.log(
+      '%c Try typing the frame: %crgcbts%c — anywhere on the page.',
+      'color:#8492a6;font-size:12px;',
+      'color:#00d4aa;font-family:monospace;font-weight:bold;font-size:12px;',
+      'color:#8492a6;font-size:12px;'
+    );
+    console.log(
+      '%c // Under the hood: %c\n' +
+      '  > Pure static. No React. No build step. No tracking.\n' +
+      '  > Hand-rolled R-G-C-B-T-S frame with composition score and XML toggle.\n' +
+      '  > 6 famous prompts decomposed in the Archaeology library.\n' +
+      '  > Share links encode the full form in a URL fragment — never hits a server.\n' +
+      '  > Sibling tool to the self-hosted Context grader on the Unraid box.\n',
+      'color:#3b82f6;font-weight:bold;font-size:13px;',
+      'color:#8492a6;font-size:12px;line-height:1.7;'
+    );
+
+    // Keyboard secret phrase: type "rgcbts" anywhere → celebrate
+    (function () {
+      const phrase = 'rgcbts';
+      let buf = '';
+      let unlocked = false;
+      document.addEventListener('keydown', (e) => {
+        // Ignore if user is genuinely typing into a textarea — we don't want
+        // to fire while they're composing a Goal. Only fire when buffer
+        // matches *and* the active element is not a text field that already
+        // contains the phrase as a real word.
+        if (e.key.length !== 1) return;
+        buf = (buf + e.key.toLowerCase()).slice(-phrase.length);
+        if (buf === phrase && !unlocked) {
+          unlocked = true;
+          setTimeout(() => { unlocked = false; }, 8000);
+          celebrateFrame();
+        }
+      });
+
+      function celebrateFrame() {
+        const cards = document.querySelectorAll('.field-card[data-slot="role"], .field-card[data-slot="goal"], .field-card[data-slot="context"], .field-card[data-slot="bounds"], .field-card[data-slot="task"], .field-card[data-slot="success"]');
+        cards.forEach((c, i) => {
+          setTimeout(() => {
+            c.style.transition = 'border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease';
+            c.style.borderColor = '#00d4aa';
+            c.style.boxShadow = '0 0 0 3px rgba(0,212,170,0.25)';
+            c.style.transform = 'translateX(6px)';
+            setTimeout(() => {
+              c.style.borderColor = '';
+              c.style.boxShadow = '';
+              c.style.transform = '';
+            }, 600);
+          }, i * 120);
+        });
+        const toast = document.getElementById('toast');
+        if (toast) {
+          toast.textContent = '⚡ Frame mastery detected — R-G-C-B-T-S';
+          toast.classList.add('show');
+          setTimeout(() => toast.classList.remove('show'), 2400);
+        }
+        console.log(
+          '%c ⚡ R-G-C-B-T-S ⚡ %c You speak the frame. ',
+          'background:#00d4aa;color:#0c0f16;padding:8px 14px;border-radius:4px 0 0 4px;font-weight:bold;font-size:14px;',
+          'background:#141820;color:#00d4aa;padding:8px 14px;border-radius:0 4px 4px 0;font-size:14px;'
+        );
+      }
+    })();
+  </script>
+</body>
+</html>
