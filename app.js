@@ -722,30 +722,45 @@ function renderExampleChips() {
   label.className = "suggestions-label";
   label.textContent = "Starters:";
   el.examplesChips.appendChild(label);
-  for (const s of EXAMPLE_STARTERS) {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "chip";
-    chip.textContent = s.label;
-    chip.title = "Click to fill the next empty example pair";
-    chip.addEventListener("click", () => {
-      // Find next pair with both fields empty
-      const pairs = [...el.examplesList.querySelectorAll(".example-pair")];
-      let target = pairs.find((p) =>
-        !p.querySelector(".example-input").value.trim() &&
-        !p.querySelector(".example-output").value.trim()
-      );
-      if (!target && pairs.length < CONFIG.maxExamples) {
-        appendExamplePair("", "");
-        target = el.examplesList.lastElementChild;
-      }
-      if (!target) return;
-      target.querySelector(".example-input").value = s.input;
-      target.querySelector(".example-output").value = s.output;
-      updatePreview();
-    });
-    el.examplesChips.appendChild(chip);
+
+  const select = document.createElement("select");
+  select.className = "suggestions-select";
+  select.title = "Pick a starter to fill the next empty example pair";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = `Pick a starter… (${EXAMPLE_STARTERS.length})`;
+  placeholder.selected = true;
+  select.appendChild(placeholder);
+
+  for (let i = 0; i < EXAMPLE_STARTERS.length; i++) {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = EXAMPLE_STARTERS[i].label;
+    select.appendChild(opt);
   }
+  select.addEventListener("change", () => {
+    const idx = Number(select.value);
+    select.value = "";
+    if (!Number.isFinite(idx)) return;
+    const s = EXAMPLE_STARTERS[idx];
+    if (!s) return;
+    const pairs = [...el.examplesList.querySelectorAll(".example-pair")];
+    let target = pairs.find((p) =>
+      !p.querySelector(".example-input").value.trim() &&
+      !p.querySelector(".example-output").value.trim()
+    );
+    if (!target && pairs.length < CONFIG.maxExamples) {
+      appendExamplePair("", "");
+      target = el.examplesList.lastElementChild;
+    }
+    if (!target) return;
+    target.querySelector(".example-input").value = s.input;
+    target.querySelector(".example-output").value = s.output;
+    autoGrowAll();
+    updatePreview();
+  });
+  el.examplesChips.appendChild(select);
 }
 
 // ---------- render ----------
@@ -942,7 +957,9 @@ const _exampleObserver = new MutationObserver(() => {
 const _examplesHost = document.getElementById("examplesList");
 if (_examplesHost) _exampleObserver.observe(_examplesHost, { childList: true, subtree: true });
 
-// ---------- suggestion chips (per-slot) ----------
+// ---------- suggestion dropdown (per-slot) ----------
+// Compact <select> per slot — replaced the wrap-of-chips so the form is
+// easier to scan between text fields.
 function renderSuggestions() {
   for (const [slot, cfg] of Object.entries(SUGGESTIONS)) {
     const host = document.querySelector(`.suggestions[data-for="${slot}"]`);
@@ -952,17 +969,35 @@ function renderSuggestions() {
     label.className = "suggestions-label";
     label.textContent = "Ideas:";
     host.appendChild(label);
+
+    const select = document.createElement("select");
+    select.className = "suggestions-select";
+    select.title = cfg.mode === "replace"
+      ? "Pick an idea to fill this slot (replaces current text)"
+      : "Pick an idea to add a line to this slot";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = cfg.mode === "replace"
+      ? `Pick an idea… (${cfg.items.length})`
+      : `Add an idea… (${cfg.items.length})`;
+    placeholder.selected = true;
+    placeholder.disabled = false; // re-selectable to reset
+    select.appendChild(placeholder);
+
     for (const text of cfg.items) {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "chip";
-      chip.textContent = text;
-      chip.title = cfg.mode === "replace"
-        ? "Click to fill this slot (replaces current text)"
-        : "Click to add this line to the slot";
-      chip.addEventListener("click", () => applyChip(slot, text, cfg.mode));
-      host.appendChild(chip);
+      const opt = document.createElement("option");
+      opt.value = text;
+      opt.textContent = text;
+      select.appendChild(opt);
     }
+    select.addEventListener("change", () => {
+      const v = select.value;
+      if (!v) return;
+      applyChip(slot, v, cfg.mode);
+      select.value = ""; // reset to placeholder
+    });
+    host.appendChild(select);
   }
 }
 

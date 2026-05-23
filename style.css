@@ -480,10 +480,39 @@ button { font: inherit; color: inherit; }
 .suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin-top: 4px;
+  margin-top: 6px;
 }
+.suggestions-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  background: var(--bg-card-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 28px 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.suggestions-select:hover { border-color: var(--accent); color: var(--text); }
+.suggestions-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.suggestions-select option { background: var(--bg-card); color: var(--text); }
 .suggestions-label {
   font-family: var(--mono);
   font-size: 10px;
