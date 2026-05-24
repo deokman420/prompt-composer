@@ -1478,3 +1478,78 @@ button { font: inherit; color: inherit; }
   .help-section { padding: 18px 16px 22px; }
   .help-cards { grid-template-columns: 1fr; }
 }
+
+/* ============== PREVIEW FORMAT + MODEL PICKERS (v12) ============== */
+/* Replaces the old .fmt-toggle two-tab control. Reuses the
+   .suggestions-select pattern from the Orchestra coordination row. */
+.preview-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 0;
+}
+.preview-meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.preview-meta-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.fmt-select,
+.model-select {
+  width: 100%;
+  background: var(--bg-card-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 30px 7px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.fmt-select:hover,
+.model-select:hover { border-color: var(--accent); }
+.fmt-select:focus,
+.model-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.fmt-select option,
+.fmt-select optgroup,
+.model-select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+.fmt-select optgroup {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.model-select[hidden] { display: none; }
+
+@media (max-width: 700px) {
+  .preview-meta-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .preview-meta-field { flex: 1 1 auto; }
+}

@@ -9,6 +9,7 @@ const CONFIG = {
   currentKey: "context.composer.current.v1",
   themeKey: "context.theme",
   formatKey: "context.composer.format.v1",
+  modelKey: "context.composer.model.v1",
   bestScoreKey: "context.composer.bestScore.v1",
   lifetimeKey: "context.composer.lifetimeCount.v1",
   maxDrafts: 10,
@@ -543,6 +544,265 @@ const ARCHAEOLOGY = {
   },
 };
 
+// ---------- code-export registries (provider models + per-target generators) ----------
+// Bedrock / Vertex model-ID conventions can drift — every generated snippet
+// links its provider's official model-ID page so users can confirm the exact
+// string. Defaults below are the published 2026 conventions.
+const MODELS = {
+  anthropic: [
+    { id: "claude-opus-4-7",   bedrock: "anthropic.claude-opus-4-7-v1:0",   vertex: "claude-opus-4-7@latest",   label: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4-6", bedrock: "anthropic.claude-sonnet-4-6-v1:0", vertex: "claude-sonnet-4-6@latest", label: "Claude Sonnet 4.6" },
+    { id: "claude-haiku-4-5",  bedrock: "anthropic.claude-haiku-4-5-v1:0",  vertex: "claude-haiku-4-5@latest",  label: "Claude Haiku 4.5" },
+  ],
+  openai: [
+    { id: "gpt-5",      label: "GPT-5" },
+    { id: "gpt-5-mini", label: "GPT-5 mini" },
+    { id: "gpt-4.1",    label: "GPT-4.1" },
+  ],
+  gemini: [
+    { id: "gemini-2.5-pro",   label: "Gemini 2.5 Pro" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  ],
+};
+
+function findModel(provider, id) {
+  return (MODELS[provider] || []).find((m) => m.id === id) || (MODELS[provider] || [])[0];
+}
+function resolveModelId(target, modelEntry) {
+  if (!modelEntry) return "";
+  if (target.startsWith("bedrock-")) return modelEntry.bedrock || modelEntry.id;
+  if (target.startsWith("vertex-"))  return modelEntry.vertex  || modelEntry.id;
+  return modelEntry.id;
+}
+
+// Escape a user prompt for embedding into each target's string literal.
+function pyTripleString(s) {
+  // Python triple-double-quoted string. Escape backslashes first, then any
+  // embedded """ to avoid early-termination. \\ -> \\\\, """ -> \"\"\".
+  const safe = String(s).replace(/\\/g, "\\\\").replace(/"""/g, '\\"\\"\\"');
+  return `"""${safe}"""`;
+}
+function tsBacktickString(s) {
+  // TS / JS template literal. Escape backslash, backtick, and ${.
+  const safe = String(s).replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+  return `\`${safe}\``;
+}
+
+// JSON body builders for cURL targets.
+function anthropicJsonBody(model, prompt) {
+  return JSON.stringify({ model, max_tokens: 1024, messages: [{ role: "user", content: prompt }] }, null, 2);
+}
+function openaiJsonBody(model, prompt) {
+  return JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }, null, 2);
+}
+function geminiJsonBody(prompt) {
+  return JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }, null, 2);
+}
+
+// ----- 13 code generators -----
+function renderAnthropicCurl(prompt, m) {
+  const body = anthropicJsonBody(m.id, prompt);
+  return `curl https://api.anthropic.com/v1/messages \\
+  -H "x-api-key: $ANTHROPIC_API_KEY" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "content-type: application/json" \\
+  --data @- <<'JSON'
+${body}
+JSON
+# Docs: https://docs.anthropic.com/en/api/messages`;
+}
+function renderAnthropicPython(prompt, m) {
+  return `# pip install anthropic
+from anthropic import Anthropic
+
+client = Anthropic()  # reads ANTHROPIC_API_KEY from env
+prompt = ${pyTripleString(prompt)}
+
+message = client.messages.create(
+    model="${m.id}",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": prompt}],
+)
+print(message.content[0].text)
+# Docs: https://docs.anthropic.com/en/api/messages`;
+}
+function renderAnthropicTs(prompt, m) {
+  return `// npm i @anthropic-ai/sdk
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+const prompt = ${tsBacktickString(prompt)};
+
+const message = await client.messages.create({
+  model: "${m.id}",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: prompt }],
+});
+const block = message.content[0];
+console.log(block.type === "text" ? block.text : "");
+// Docs: https://docs.anthropic.com/en/api/messages`;
+}
+function renderBedrockPython(prompt, m) {
+  return `# pip install boto3
+# Auth: standard AWS env vars / IAM role / ~/.aws/credentials
+import boto3
+
+client = boto3.client("bedrock-runtime", region_name="us-east-1")
+prompt = ${pyTripleString(prompt)}
+
+response = client.converse(
+    modelId="${m.bedrock || m.id}",
+    messages=[{"role": "user", "content": [{"text": prompt}]}],
+    inferenceConfig={"maxTokens": 1024},
+)
+print(response["output"]["message"]["content"][0]["text"])
+# Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html`;
+}
+function renderBedrockTs(prompt, m) {
+  return `// npm i @aws-sdk/client-bedrock-runtime
+// Auth: standard AWS env vars / IAM role / ~/.aws/credentials
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+
+const client = new BedrockRuntimeClient({ region: "us-east-1" });
+const prompt = ${tsBacktickString(prompt)};
+
+const response = await client.send(new ConverseCommand({
+  modelId: "${m.bedrock || m.id}",
+  messages: [{ role: "user", content: [{ text: prompt }] }],
+  inferenceConfig: { maxTokens: 1024 },
+}));
+console.log(response.output?.message?.content?.[0]?.text);
+// Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html`;
+}
+function renderVertexPython(prompt, m) {
+  return `# pip install "anthropic[vertex]"
+# Auth: gcloud auth application-default login (or service account)
+from anthropic import AnthropicVertex
+
+client = AnthropicVertex(project_id="YOUR_GCP_PROJECT", region="us-east5")
+prompt = ${pyTripleString(prompt)}
+
+message = client.messages.create(
+    model="${m.vertex || m.id}",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": prompt}],
+)
+print(message.content[0].text)
+# Docs: https://docs.anthropic.com/en/api/claude-on-vertex-ai`;
+}
+function renderVertexTs(prompt, m) {
+  return `// npm i @anthropic-ai/vertex-sdk
+// Auth: gcloud auth application-default login (or service account)
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
+
+const client = new AnthropicVertex({ projectId: "YOUR_GCP_PROJECT", region: "us-east5" });
+const prompt = ${tsBacktickString(prompt)};
+
+const message = await client.messages.create({
+  model: "${m.vertex || m.id}",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: prompt }],
+});
+const block = message.content[0];
+console.log(block.type === "text" ? block.text : "");
+// Docs: https://docs.anthropic.com/en/api/claude-on-vertex-ai`;
+}
+function renderOpenAICurl(prompt, m) {
+  const body = openaiJsonBody(m.id, prompt);
+  return `curl https://api.openai.com/v1/chat/completions \\
+  -H "Authorization: Bearer $OPENAI_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  --data @- <<'JSON'
+${body}
+JSON
+# Docs: https://platform.openai.com/docs/api-reference/chat`;
+}
+function renderOpenAIPython(prompt, m) {
+  return `# pip install openai
+from openai import OpenAI
+
+client = OpenAI()  # reads OPENAI_API_KEY from env
+# (also works with OpenAI-compatible servers: OpenAI(base_url="http://localhost:11434/v1"))
+prompt = ${pyTripleString(prompt)}
+
+response = client.chat.completions.create(
+    model="${m.id}",
+    messages=[{"role": "user", "content": prompt}],
+)
+print(response.choices[0].message.content)
+# Docs: https://platform.openai.com/docs/api-reference/chat`;
+}
+function renderOpenAITs(prompt, m) {
+  return `// npm i openai
+import OpenAI from "openai";
+
+const client = new OpenAI(); // reads OPENAI_API_KEY from env
+// (also works with OpenAI-compatible servers: new OpenAI({ baseURL: "http://localhost:11434/v1" }))
+const prompt = ${tsBacktickString(prompt)};
+
+const response = await client.chat.completions.create({
+  model: "${m.id}",
+  messages: [{ role: "user", content: prompt }],
+});
+console.log(response.choices[0].message.content);
+// Docs: https://platform.openai.com/docs/api-reference/chat`;
+}
+function renderGeminiCurl(prompt, m) {
+  const body = geminiJsonBody(prompt);
+  return `curl "https://generativelanguage.googleapis.com/v1beta/models/${m.id}:generateContent?key=$GEMINI_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  --data @- <<'JSON'
+${body}
+JSON
+# Docs: https://ai.google.dev/gemini-api/docs/text-generation`;
+}
+function renderGeminiPython(prompt, m) {
+  return `# pip install google-genai
+from google import genai
+
+client = genai.Client()  # reads GEMINI_API_KEY from env
+prompt = ${pyTripleString(prompt)}
+
+response = client.models.generate_content(
+    model="${m.id}",
+    contents=prompt,
+)
+print(response.text)
+# Docs: https://ai.google.dev/gemini-api/docs/text-generation`;
+}
+function renderGeminiTs(prompt, m) {
+  return `// npm i @google/genai
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({}); // reads GEMINI_API_KEY from env
+const prompt = ${tsBacktickString(prompt)};
+
+const response = await ai.models.generateContent({
+  model: "${m.id}",
+  contents: prompt,
+});
+console.log(response.text);
+// Docs: https://ai.google.dev/gemini-api/docs/text-generation`;
+}
+
+const FORMAT_TARGETS = {
+  markdown: { kind: "prompt", label: "Markdown", caption: "Markdown works in any agent; switch to XML when targeting Claude with mixed content." },
+  xml:      { kind: "prompt", label: "XML",      caption: "XML is recommended when targeting Claude with mixed instructions, data, and examples." },
+  "anthropic-curl":   { kind: "code", provider: "anthropic", label: "Anthropic · cURL",        copyLabel: "Copy cURL",        render: renderAnthropicCurl },
+  "anthropic-python": { kind: "code", provider: "anthropic", label: "Anthropic · Python SDK", copyLabel: "Copy Python",      render: renderAnthropicPython },
+  "anthropic-ts":     { kind: "code", provider: "anthropic", label: "Anthropic · TypeScript", copyLabel: "Copy TypeScript",  render: renderAnthropicTs },
+  "bedrock-python":   { kind: "code", provider: "anthropic", label: "AWS Bedrock · Python",   copyLabel: "Copy Python",      render: renderBedrockPython },
+  "bedrock-ts":       { kind: "code", provider: "anthropic", label: "AWS Bedrock · TypeScript", copyLabel: "Copy TypeScript", render: renderBedrockTs },
+  "vertex-python":    { kind: "code", provider: "anthropic", label: "Vertex AI · Python",     copyLabel: "Copy Python",      render: renderVertexPython },
+  "vertex-ts":        { kind: "code", provider: "anthropic", label: "Vertex AI · TypeScript", copyLabel: "Copy TypeScript",  render: renderVertexTs },
+  "openai-curl":      { kind: "code", provider: "openai",    label: "OpenAI · cURL",          copyLabel: "Copy cURL",        render: renderOpenAICurl },
+  "openai-python":    { kind: "code", provider: "openai",    label: "OpenAI · Python SDK",    copyLabel: "Copy Python",      render: renderOpenAIPython },
+  "openai-ts":        { kind: "code", provider: "openai",    label: "OpenAI · TypeScript",    copyLabel: "Copy TypeScript",  render: renderOpenAITs },
+  "gemini-curl":      { kind: "code", provider: "gemini",    label: "Gemini · cURL",          copyLabel: "Copy cURL",        render: renderGeminiCurl },
+  "gemini-python":    { kind: "code", provider: "gemini",    label: "Gemini · Python SDK",    copyLabel: "Copy Python",      render: renderGeminiPython },
+  "gemini-ts":        { kind: "code", provider: "gemini",    label: "Gemini · TypeScript",    copyLabel: "Copy TypeScript",  render: renderGeminiTs },
+};
+
 const $ = (id) => document.getElementById(id);
 
 const el = {
@@ -565,7 +825,8 @@ const el = {
   examplesList: $("examplesList"),
   addExample: $("addExampleBtn"),
   examplesChips: $("examplesChips"),
-  fmtTabs: document.querySelectorAll(".fmt-tab"),
+  fmtSelect: $("fmtSelect"),
+  modelSelect: $("modelSelect"),
   fmtCaption: $("fmtCaption"),
   toast: $("toast"),
   lifetime: $("lifetimeCount"),
@@ -593,20 +854,64 @@ el.theme?.addEventListener("click", () => {
   localStorage.setItem(CONFIG.themeKey, next);
 });
 
-// ---------- format toggle ----------
+// ---------- format + model pickers ----------
 function getFormat() {
-  return localStorage.getItem(CONFIG.formatKey) === "xml" ? "xml" : "markdown";
+  const saved = localStorage.getItem(CONFIG.formatKey);
+  return FORMAT_TARGETS[saved] ? saved : "markdown";
+}
+function getSelectedModel() {
+  // Saved value is a "provider:id" pair; fall back to provider's first model.
+  const target = FORMAT_TARGETS[getFormat()];
+  const provider = target?.kind === "code" ? target.provider : "anthropic";
+  const saved = localStorage.getItem(CONFIG.modelKey) || "";
+  const [savedProv, savedId] = saved.split(":");
+  if (savedProv === provider) {
+    const hit = findModel(provider, savedId);
+    if (hit) return hit;
+  }
+  return MODELS[provider][0];
+}
+function populateModelSelect() {
+  if (!el.modelSelect) return;
+  const target = FORMAT_TARGETS[getFormat()];
+  if (!target || target.kind !== "code") {
+    el.modelSelect.hidden = true;
+    return;
+  }
+  const provider = target.provider;
+  const current = getSelectedModel();
+  el.modelSelect.innerHTML = "";
+  for (const m of MODELS[provider]) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label;
+    if (m.id === current.id) opt.selected = true;
+    el.modelSelect.appendChild(opt);
+  }
+  el.modelSelect.hidden = false;
 }
 function setFormat(fmt) {
+  if (!FORMAT_TARGETS[fmt]) fmt = "markdown";
   localStorage.setItem(CONFIG.formatKey, fmt);
-  el.fmtTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.fmt === fmt));
-  el.copyMd.textContent = fmt === "xml" ? "Copy as XML" : "Copy as Markdown";
-  el.fmtCaption.textContent = fmt === "xml"
-    ? "XML is recommended when targeting Claude with mixed instructions, data, and examples."
-    : "Markdown works in any agent; switch to XML when targeting Claude with mixed content.";
+  const target = FORMAT_TARGETS[fmt];
+  if (el.fmtSelect) el.fmtSelect.value = fmt;
+  el.copyMd.textContent = target.copyLabel || `Copy as ${target.label}`;
+  if (target.kind === "code") {
+    el.fmtCaption.textContent = `Ready-to-run ${target.label} snippet. Your composed prompt is embedded as the user message; no API keys are baked in.`;
+  } else {
+    el.fmtCaption.textContent = target.caption;
+  }
+  populateModelSelect();
   updatePreview();
 }
-el.fmtTabs.forEach((t) => t.addEventListener("click", () => setFormat(t.dataset.fmt)));
+function setModel(modelId) {
+  const target = FORMAT_TARGETS[getFormat()];
+  if (!target || target.kind !== "code") return;
+  localStorage.setItem(CONFIG.modelKey, `${target.provider}:${modelId}`);
+  updatePreview();
+}
+el.fmtSelect?.addEventListener("change", (e) => setFormat(e.target.value));
+el.modelSelect?.addEventListener("change", (e) => setModel(e.target.value));
 
 // ---------- state ----------
 function readForm() {
@@ -817,7 +1122,15 @@ function renderExamplesXml(examples) {
 }
 
 function renderCurrent(state) {
-  return getFormat() === "xml" ? renderXml(state) : renderMarkdown(state);
+  const fmt = getFormat();
+  const target = FORMAT_TARGETS[fmt];
+  if (!target || target.kind === "prompt") {
+    return fmt === "xml" ? renderXml(state) : renderMarkdown(state);
+  }
+  // Code targets: embed the Markdown render as the prompt body. Use the
+  // user-selected model, falling back to the provider's first entry.
+  const promptBody = renderMarkdown(state);
+  return target.render(promptBody, getSelectedModel());
 }
 
 function updatePreview() {

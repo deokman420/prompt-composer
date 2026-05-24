@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
 
@@ -207,9 +207,39 @@
           <input type="checkbox" id="gradeToggle" />
           <span>Append <strong>“grade my prompt”</strong> rubric</span>
         </label>
-        <div class="fmt-toggle" role="tablist" aria-label="Output format">
-          <button class="fmt-tab is-active" type="button" role="tab" data-fmt="markdown">Markdown</button>
-          <button class="fmt-tab" type="button" role="tab" data-fmt="xml">XML</button>
+        <div class="preview-meta-row">
+          <label class="preview-meta-field">
+            <span class="preview-meta-label">Export as</span>
+            <select id="fmtSelect" class="fmt-select" aria-label="Output format">
+              <optgroup label="Prompt text">
+                <option value="markdown">Markdown</option>
+                <option value="xml">XML</option>
+              </optgroup>
+              <optgroup label="Anthropic (Claude)">
+                <option value="anthropic-curl">cURL</option>
+                <option value="anthropic-python">Python SDK</option>
+                <option value="anthropic-ts">TypeScript SDK</option>
+                <option value="bedrock-python">AWS Bedrock · Python</option>
+                <option value="bedrock-ts">AWS Bedrock · TypeScript</option>
+                <option value="vertex-python">Vertex AI · Python</option>
+                <option value="vertex-ts">Vertex AI · TypeScript</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai-curl">cURL</option>
+                <option value="openai-python">Python SDK</option>
+                <option value="openai-ts">TypeScript SDK</option>
+              </optgroup>
+              <optgroup label="Google Gemini">
+                <option value="gemini-curl">cURL</option>
+                <option value="gemini-python">Python SDK</option>
+                <option value="gemini-ts">TypeScript SDK</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="preview-meta-field" id="modelSelectField">
+            <span class="preview-meta-label">Model</span>
+            <select id="modelSelect" class="model-select" aria-label="Target model" hidden></select>
+          </label>
         </div>
         <p id="fmtCaption" class="fmt-caption">Markdown works in any agent; switch to XML when targeting Claude with mixed content.</p>
         <pre id="preview" class="preview-text" aria-live="polite"></pre>
@@ -773,7 +803,7 @@ call_3: write report using verdicts.json</pre>
     </div>
   </footer>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>
