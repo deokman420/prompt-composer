@@ -1672,6 +1672,7 @@ const ORCH_ARCHAEOLOGY = {
 const orchEl = {
   classicView: document.getElementById("classicView"),
   view: document.getElementById("orchestrationView"),
+  helpView: document.getElementById("helpView"),
   modeTabs: document.querySelectorAll(".mode-tab"),
   patternPicker: document.getElementById("patternPicker"),
   patternName: document.getElementById("orchPatternName"),
@@ -2145,25 +2146,41 @@ function orchRenderArchaeology() {
 
 // ---- mode toggle ----
 function orchSetMode(mode) {
+  if (mode !== "single" && mode !== "orchestra" && mode !== "help") mode = "single";
   localStorage.setItem(ORCH_CFG.modeKey, mode);
   orchEl.modeTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.mode === mode));
   const isOrch = mode === "orchestra";
-  orchEl.classicView.hidden = isOrch;
+  const isHelp = mode === "help";
+  orchEl.classicView.hidden = isOrch || isHelp;
   orchEl.view.hidden = !isOrch;
-  // Hide the slot meter / repurpose the score chip when in orchestra mode.
-  if (orchEl.slotMeter) orchEl.slotMeter.style.visibility = isOrch ? "hidden" : "";
-  if (orchEl.scoreLabel) orchEl.scoreLabel.textContent = isOrch ? "Orchestra" : "Composition";
+  if (orchEl.helpView) orchEl.helpView.hidden = !isHelp;
+  // Hero meta is structural-score machinery — meaningless in Help mode.
+  if (orchEl.slotMeter) orchEl.slotMeter.style.visibility = (isOrch || isHelp) ? "hidden" : "";
+  if (el.scoreVal && el.scoreVal.parentElement) {
+    el.scoreVal.parentElement.style.visibility = isHelp ? "hidden" : "";
+  }
+  if (orchEl.scoreLabel) {
+    orchEl.scoreLabel.textContent = isHelp ? "Reference" : (isOrch ? "Orchestra" : "Composition");
+  }
   if (isOrch) {
     el.scoreVal.textContent = orchHealth(orchState).score;
-    orchRenderPreview(); // recompute and refresh hero score
-    // mirror hero score with orchestra health
+    orchRenderPreview();
     el.scoreVal.textContent = orchHealth(orchState).score;
-  } else {
+  } else if (!isHelp) {
     updatePreview();
+  }
+  if (isHelp) {
+    // Scroll to top of help view so users always land on the intro / TOC.
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
 }
 
 orchEl.modeTabs.forEach((t) => t.addEventListener("click", () => orchSetMode(t.dataset.mode)));
+
+// Inline "jump to mode" buttons inside the Help view.
+document.querySelectorAll(".help-jump[data-jump-mode]").forEach((b) => {
+  b.addEventListener("click", () => orchSetMode(b.dataset.jumpMode));
+});
 
 // Mirror the orchestra health to the hero score chip whenever we render.
 const _origRenderHealth = orchRenderHealth;

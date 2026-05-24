@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
 
@@ -39,6 +39,7 @@
         <div class="mode-toggle" role="tablist" aria-label="Composer mode">
           <button class="mode-tab is-active" type="button" role="tab" data-mode="single" title="Compose one prompt at a time using R-G-C-B-T-S">Single prompt</button>
           <button class="mode-tab" type="button" role="tab" data-mode="orchestra" title="Compose a multi-agent orchestration: orchestrator + workers + coordination">Agent orchestra</button>
+          <button class="mode-tab" type="button" role="tab" data-mode="help" title="Educational reference: prompting techniques and orchestration patterns, with sources">Prompt Help</button>
         </div>
         <div class="slot-meter" title="Structural completeness of the 6 core slots">
           <span id="slotCount" class="slot-count">0 / 6 slots</span>
@@ -365,6 +366,389 @@
     </section>
 
    </div><!-- /#orchestrationView -->
+
+   <!-- ============== HELP / EDUCATIONAL VIEW ============== -->
+   <div id="helpView" hidden>
+
+    <section class="band help-intro">
+      <div class="band-label">00 · reference</div>
+      <h2 class="help-title">Prompt Help — a working field guide</h2>
+      <p class="help-blurb">
+        A curated reference compiled from primary sources: vendor docs (Anthropic, OpenAI, LangChain),
+        seminal arXiv papers, and Anthropic's multi-agent research write-up.
+        Every claim links to the paper or doc it came from — no second-hand paraphrasing.
+        Read top-to-bottom or jump in.
+      </p>
+
+      <details class="help-toc-card" open>
+        <summary>Contents</summary>
+        <ol class="help-toc">
+          <li><a href="#help-foundations">§1 — Foundations: why structure beats prose</a></li>
+          <li><a href="#help-single">§2 — Single-prompt techniques (11)</a></li>
+          <li><a href="#help-orchestra">§3 — Agent orchestration patterns (7)</a></li>
+          <li><a href="#help-escalate">§4 — When to escalate single → orchestra</a></li>
+          <li><a href="#help-sources">§5 — Sources</a></li>
+        </ol>
+      </details>
+    </section>
+
+    <!-- §1 Foundations -->
+    <section class="help-section" id="help-foundations">
+      <div class="band-label">§1 · foundations</div>
+      <h3 class="help-h3">Why structure beats prose</h3>
+      <p>
+        A model that gets a wall of prose has to <em>infer</em> three things at once: who it's playing,
+        what it's optimizing for, and what shape the output should take. A model that gets a frame
+        only has to <em>fill</em> them. Composer's <strong>R-G-C-B-T-S</strong> frame
+        — Role · Goal · Context · Bounds · Task · Success — is one such frame, but the deeper rule
+        is just: separate the slots so the model can't confuse them.
+      </p>
+      <p>
+        The rest of this guide is the toolkit you slot <em>into</em> that frame: techniques that change
+        how the model reasons (chain-of-thought, self-consistency), how it acts (ReAct, reflexion),
+        and how multiple models compose into a system bigger than any single context window.
+      </p>
+      <p class="help-cta">
+        Try the frame: switch to <button class="help-jump" type="button" data-jump-mode="single">Single prompt</button>
+        and start filling slots.
+      </p>
+    </section>
+
+    <!-- §2 Single-prompt techniques -->
+    <section class="help-section" id="help-single">
+      <div class="band-label">§2 · single-prompt techniques</div>
+      <h3 class="help-h3">Eleven techniques worth knowing by name</h3>
+      <p class="help-section-blurb">
+        Ordered roughly by complexity. The first two are baselines every later technique is measured against.
+        Each card cites a single primary source — read it before you commit to the pattern in production.
+      </p>
+
+      <div class="help-cards">
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Zero-shot prompting</h4>
+            <span class="help-cite">Brown et al. · 2020</span>
+          </header>
+          <p>Asking a model to perform a task using only a natural-language instruction, with no worked examples. Works well on tasks the base model has seen heavily in pre-training; degrades on tasks with unusual formats or domain conventions.</p>
+          <p class="help-when"><strong>When to use:</strong> The task is common (summarize, translate, classify into obvious labels) and you want the shortest possible prompt.</p>
+          <pre class="help-example">Classify the sentiment of this review as positive, negative, or neutral:
+"{review}"</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2005.14165" target="_blank" rel="noopener">Language Models are Few-Shot Learners ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Few-shot prompting <span class="help-card-alt">· in-context learning</span></h4>
+            <span class="help-cite">Brown et al. · 2020</span>
+          </header>
+          <p>Include a small number of input/output demonstrations in the prompt so the model infers the task pattern at inference time, with no weight updates. Sensitive to example selection, ordering, and label distribution; benefits saturate quickly past ~8–16 examples for most tasks.</p>
+          <p class="help-when"><strong>When to use:</strong> Output format is non-obvious (custom JSON, niche labels, particular tone) and you can show 2–8 representative examples.</p>
+          <pre class="help-example">Q: 2+2   A: 4
+Q: 7+5   A: 12
+Q: 13+9  A:</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2005.14165" target="_blank" rel="noopener">Language Models are Few-Shot Learners ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Chain-of-Thought (CoT)</h4>
+            <span class="help-cite">Wei et al. · 2022</span>
+          </header>
+          <p>Prompt the model to produce intermediate reasoning steps before its final answer, typically by showing exemplars that include such steps. The original paper reports gains mainly on arithmetic, commonsense, and symbolic reasoning, and only at sufficient model scale (roughly 60B+ params in the 2022 evaluation) — smaller models can be neutral or hurt by it.</p>
+          <p class="help-when"><strong>When to use:</strong> Multi-step arithmetic, logic, or planning on a capable model where you can tolerate longer outputs.</p>
+          <pre class="help-example">Q: Roger has 5 balls. He buys 2 cans of 3 balls each. How many balls?
+A: Roger starts with 5. 2 cans of 3 is 6. 5 + 6 = 11. Answer: 11.
+Q: {your question}
+A:</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2201.11903" target="_blank" rel="noopener">Chain-of-Thought Prompting Elicits Reasoning ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Self-Consistency</h4>
+            <span class="help-cite">Wang et al. · 2022</span>
+          </header>
+          <p>Sample multiple chain-of-thought reasoning paths at non-zero temperature, then take a majority vote over the final answers instead of using a single greedy decode. Improves reasoning accuracy on benchmarks like GSM8K (+17.9 points reported), but multiplies inference cost by the sample count and only works when the answer space supports voting.</p>
+          <p class="help-when"><strong>When to use:</strong> Reasoning tasks where the answer is a short discrete value (number, label, multiple-choice letter) and you can afford N parallel completions.</p>
+          <pre class="help-example"># Run the same CoT prompt N times at temperature=0.7
+final_answer = majority_vote([extract(c) for c in completions])</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2203.11171" target="_blank" rel="noopener">Self-Consistency Improves CoT Reasoning ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Tree-of-Thoughts (ToT)</h4>
+            <span class="help-cite">Yao et al. · 2023</span>
+          </header>
+          <p>Generalizes chain-of-thought into a search tree where the model proposes multiple candidate "thoughts" at each step, evaluates them, and expands or backtracks. Requires an explicit controller (BFS/DFS plus a value function) wrapped around the model, so it is an orchestration pattern, not a single prompt; cost scales with branching factor and depth.</p>
+          <p class="help-when"><strong>When to use:</strong> Problems where solutions need exploration and the model can reasonably evaluate its own partial progress (Game of 24, creative writing with constraints, crosswords).</p>
+          <pre class="help-example">Step:  "Propose 3 next moves toward the goal. One-line rationale each."
+Eval:  "Rate each candidate sure / maybe / impossible toward solving {task}."
+Loop:  expand top-k, prune the rest, repeat until depth D.</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2305.10601" target="_blank" rel="noopener">Tree of Thoughts: Deliberate Problem Solving ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>ReAct</h4>
+            <span class="help-cite">Yao et al. · 2022</span>
+          </header>
+          <p>Interleaves reasoning traces (<code>Thought:</code>) with tool-use actions (<code>Action:</code>) and their results (<code>Observation:</code>) in a single loop, so the model can ground reasoning in retrieved facts. Reduces hallucination on knowledge tasks but adds latency per step and depends on having reliable tools and a stop condition.</p>
+          <p class="help-when"><strong>When to use:</strong> Tasks where the model must look things up or operate on an environment (search, browsing, API calls, code execution) rather than answer from parametric knowledge alone.</p>
+          <pre class="help-example">Thought: I need the population of Lyon.
+Action: search("Lyon population")
+Observation: ~522,000 (2023)
+Thought: That answers the question.
+Answer: ~522,000</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct: Synergizing Reasoning and Acting ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Reflexion</h4>
+            <span class="help-cite">Shinn et al. · 2023</span>
+          </header>
+          <p>After an agent attempt fails (per an external evaluator or unit test), the model writes a short natural-language critique of what went wrong and stores it in an episodic memory that is prepended to the next attempt. Improves iteratively on tasks with a clear success signal; without that signal, "reflection" is unverified self-talk and can entrench mistakes.</p>
+          <p class="help-when"><strong>When to use:</strong> Agentic loops with a checkable verdict per attempt (passing tests, reaching a goal state, a reward score) and budget for multiple tries.</p>
+          <pre class="help-example">attempt_1 -> fail
+reflect:   "I assumed the index was 1-based; it is 0-based."
+attempt_2: &lt;prior reflections + original task&gt;</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Reflexion: Verbal Reinforcement Learning ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Role / persona prompting</h4>
+            <span class="help-cite">Anthropic docs</span>
+          </header>
+          <p>Set a role for the model in the system prompt to focus its tone, vocabulary, and default behaviors for a use case. Anthropic notes that even a single sentence shifts behavior measurably — but role prompting does not unlock new capabilities and does not reliably bypass safety training.</p>
+          <p class="help-when"><strong>When to use:</strong> You want a consistent voice or domain framing across many turns ("code reviewer", "patient-facing triage nurse") without restating it each message.</p>
+          <pre class="help-example">system: You are a senior SRE running a calm, blameless post-mortem.
+        Prefer concrete timelines and falsifiable claims.
+user:   Here is the incident transcript: ...</pre>
+          <p class="help-source"><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" target="_blank" rel="noopener">Anthropic — Prompting best practices (system prompts) ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Chain-of-Density</h4>
+            <span class="help-cite">Adams et al. · 2023</span>
+          </header>
+          <p>Iteratively rewrites a summary at fixed length, each pass adding 1–3 previously missing salient entities without growing the word count, so the final summary is denser and more abstractive. Human raters prefer denser summaries up to a point, then readability degrades — a real density/readability tradeoff to tune.</p>
+          <p class="help-when"><strong>When to use:</strong> Producing a short, information-dense summary of a long article when entity coverage matters more than narrative flow.</p>
+          <pre class="help-example">Summarize the article in 5 sentences. Then repeat 4 more times.
+Each iteration: keep length identical, add 1–3 missing salient
+entities, remove filler. Output all 5 versions as a JSON list.</pre>
+          <p class="help-source"><a href="https://arxiv.org/abs/2309.04269" target="_blank" rel="noopener">From Sparse to Dense: Chain of Density ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Structured output <span class="help-card-alt">· JSON schema mode</span></h4>
+            <span class="help-cite">OpenAI · 2024</span>
+          </header>
+          <p>Constrains decoding so the response is guaranteed to be valid JSON matching a supplied JSON Schema. OpenAI's Structured Outputs feature enforces adherence at the decoding layer — not by prompt instruction — trading some flexibility (schema specified up front, some JSON Schema features unsupported) for reliable parsing.</p>
+          <p class="help-when"><strong>When to use:</strong> Any downstream code path that needs to <code>JSON.parse</code> the response or hand it to a typed function — extraction, classification with metadata, tool-call arguments.</p>
+          <pre class="help-example">response_format = { "type": "json_schema",
+  "json_schema": { "name": "Ticket", "strict": true,
+    "schema": { "type": "object",
+      "properties": { "severity": {"enum":["low","med","high"]},
+                      "summary":  {"type":"string"} },
+      "required": ["severity","summary"],
+      "additionalProperties": false } } }</pre>
+          <p class="help-source"><a href="https://openai.com/index/introducing-structured-outputs-in-the-api/" target="_blank" rel="noopener">OpenAI — Structured Outputs in the API ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Prompt chaining</h4>
+            <span class="help-cite">Anthropic docs</span>
+          </header>
+          <p>Split a task into a sequence of separate model calls, where each call's output feeds the next, instead of asking for everything in one prompt. The most common pattern is self-correction — draft → critique → revise. Worth the added latency mainly when you need to inspect, log, or branch on intermediate outputs.</p>
+          <p class="help-when"><strong>When to use:</strong> The pipeline has distinct stages with different instructions, you want to evaluate or gate between them, or a single prompt is hitting context/quality limits.</p>
+          <pre class="help-example">call_1: extract claims from {doc} -> claims.json
+call_2: for each claim, verify against {source} -> verdicts.json
+call_3: write report using verdicts.json</pre>
+          <p class="help-source"><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts" target="_blank" rel="noopener">Anthropic — Chain complex prompts ↗</a></p>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- §3 Orchestration patterns -->
+    <section class="help-section" id="help-orchestra">
+      <div class="band-label">§3 · agent orchestration patterns</div>
+      <h3 class="help-h3">Seven shapes a multi-agent system can take</h3>
+      <p class="help-section-blurb">
+        Each pattern names a topology (who talks to whom) and a termination rule (when the system stops).
+        Most production systems combine two or three — e.g. an orchestrator-worker whose orchestrator
+        runs an internal reflection loop.
+      </p>
+
+      <div class="help-cards">
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Orchestrator-worker</h4>
+            <span class="help-cite">Anthropic · 2024</span>
+          </header>
+          <p><strong>Shape:</strong> A central LLM (orchestrator) inspects the task, dynamically decomposes it into subtasks, and dispatches each to a worker LLM with its own context window. Workers return structured results that the orchestrator synthesizes. The orchestrator decides when the result satisfies the brief.</p>
+          <p class="help-when"><strong>When to use:</strong> Subtasks cannot be enumerated up front — e.g. a research question whose sub-queries depend on what the first searches return.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> The orchestrator over-spawns redundant workers (or workers duplicate work) because there is no shared scratchpad, inflating token cost without adding coverage.</p>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Sequential pipeline</h4>
+            <span class="help-cite">Anthropic · 2024</span>
+          </header>
+          <p><strong>Shape:</strong> A fixed DAG where each step is an LLM call whose input is the previous step's output, often with deterministic gates (validators, parsers, regex) between steps that can short-circuit the chain. Ends when the last node returns; no agent decides to stop.</p>
+          <p class="help-when"><strong>When to use:</strong> The task decomposes cleanly into a known sequence of subtasks and you'll trade latency for higher per-step accuracy.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> An error in an early step (hallucinated entity, malformed outline) propagates and is amplified by every downstream step — no node ever revisits earlier output.</p>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Parallel fan-out <span class="help-card-alt">· map-reduce</span></h4>
+            <span class="help-cite">LangGraph docs · 2025</span>
+          </header>
+          <p><strong>Shape:</strong> A coordinator emits N independent calls (sectioning over different inputs, or voting over the same input) that execute concurrently; a reducer aggregates by concatenation, majority vote, or a final synthesizer LLM. Termination: once all branches return, the reducer fires.</p>
+          <p class="help-when"><strong>When to use:</strong> Unit count is known or computable from state (summarize each of 40 docs, screen a prompt with K guardrail checks) and units are independent.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> Branches that should share context (cross-document deduplication) can't see each other, so the reducer inherits inconsistencies no single branch could detect.</p>
+          <p class="help-source"><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph — graph API (Send / map-reduce) ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Debate <span class="help-card-alt">· multi-agent argumentation</span></h4>
+            <span class="help-cite">Du et al. · 2023</span>
+          </header>
+          <p><strong>Shape:</strong> Two or more LLM instances generate independent answers to the same prompt, then over R rounds each agent reads the others' previous-round responses and updates its own. Final answers are aggregated by majority vote or a consensus pass — no external judge required.</p>
+          <p class="help-when"><strong>When to use:</strong> Factual or reasoning tasks where a single chain-of-thought is unreliable and exposure to a peer's counter-argument empirically pulls answers toward truth (math word problems, factual QA).</p>
+          <p class="help-fail"><strong>Failure mode:</strong> Confidently-wrong agents anchor the group. In long debates, models converge on a shared <em>incorrect</em> answer — more rounds make accuracy worse, not better.</p>
+          <p class="help-source"><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Improving Factuality through Multiagent Debate ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Evaluator-optimizer loop</h4>
+            <span class="help-cite">Anthropic · 2024</span>
+          </header>
+          <p><strong>Shape:</strong> A generator LLM produces a candidate; a separate evaluator LLM (or rubric-prompted call) scores it against explicit criteria and returns feedback; the generator regenerates conditioned on that feedback. Loop ends when the evaluator returns "accept" or a max-iteration cap is hit.</p>
+          <p class="help-when"><strong>When to use:</strong> You can articulate evaluation criteria clearly enough that the evaluator's feedback measurably improves the next draft — literary translation, code that must pass a stated spec.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> Evaluator and generator collude on a shared blind spot (both miss the same class of error), so the loop terminates at a confident but wrong "accept."</p>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Hierarchical <span class="help-card-alt">· supervisor of supervisors</span></h4>
+            <span class="help-cite">LangGraph · 2025</span>
+          </header>
+          <p><strong>Shape:</strong> A tree where a top-level supervisor routes work to mid-level supervisors, each routing to its own worker pool; control returns up the tree via explicit handoff tools. The top-level supervisor emits the final answer by routing to a <code>FINISH</code> sentinel. Each supervisor sees only its own team's traffic.</p>
+          <p class="help-when"><strong>When to use:</strong> Enough specialized teams (research, writing, ops) that giving one supervisor direct access to every worker would blow its context budget and degrade routing.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> Information needed across teams (a constraint research discovered) gets compressed into the inter-supervisor handoff and is lost before reaching the team that needed it.</p>
+          <p class="help-source"><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">langgraph-supervisor-py ↗</a></p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Reflection / critic loop <span class="help-card-alt">· single-agent</span></h4>
+            <span class="help-cite">Shinn et al. · 2023</span>
+          </header>
+          <p><strong>Shape:</strong> One agent attempts the task, receives an external feedback signal (test, tool error, reward, or self-generated critique), writes a short verbal reflection on what went wrong, stores it in an episodic memory buffer, and re-attempts with the reflection prepended. Ends on success or trial-count exhaustion.</p>
+          <p class="help-when"><strong>When to use:</strong> Tasks with a cheap, reliable success signal per attempt (unit tests, environment reward, retrieval verification) where the same model can plausibly fix its own mistake once it is named.</p>
+          <p class="help-fail"><strong>Failure mode:</strong> Without a grounded external signal, self-critique is no more reliable than the original answer — the agent rationalizes the wrong answer or flips a correct one under self-doubt.</p>
+          <p class="help-source"><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Reflexion: Verbal Reinforcement Learning ↗</a></p>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- §4 Escalation checklist -->
+    <section class="help-section" id="help-escalate">
+      <div class="band-label">§4 · escalation</div>
+      <h3 class="help-h3">When to escalate single → orchestra</h3>
+      <p class="help-section-blurb">
+        Multi-agent systems are not a default upgrade. Anthropic's multi-agent research write-up measured
+        them consuming roughly <strong>15× the tokens</strong> of a chat interaction — token usage alone
+        explained ~80% of performance variance in their evaluation. Only escalate when the task
+        genuinely needs more capacity than one context window can hold.
+      </p>
+
+      <ul class="help-checklist">
+        <li>Required source material exceeds what one context window can hold even with retrieval — work must be sharded across separate windows to fit.</li>
+        <li>The task is naturally breadth-first: pursue several independent leads in parallel rather than one chain end-to-end.</li>
+        <li>Multiple distinct, complex tool integrations are needed (search + code + database + filesystem) and one agent's tool-selection accuracy degrades when the roster gets too large.</li>
+        <li>The expected dollar value of the answer absorbs an order-of-magnitude token premium over a single chat.</li>
+        <li>Subtask outputs are large artifacts (reports, code, datasets) better written to a shared store than threaded back through conversation history.</li>
+      </ul>
+
+      <p class="help-counter"><strong>Counter-indicators (stay single-prompt):</strong> the task requires all agents to share the same evolving context, depends on tight real-time coordination, or the per-call latency budget is small.</p>
+
+      <blockquote class="help-quote">
+        Agents typically use about 4× more tokens than chat interactions, and multi-agent systems use about 15× more tokens than chats.
+        <cite>— Anthropic, "How we built our multi-agent research system"</cite>
+      </blockquote>
+      <blockquote class="help-quote">
+        Once intelligence reaches a threshold, multi-agent systems become a vital way to scale performance.
+        <cite>— Anthropic, "How we built our multi-agent research system"</cite>
+      </blockquote>
+
+      <p>
+        On handoff: Anthropic recommends having subagents write structured outputs to a filesystem and
+        pass <em>lightweight references</em> back to the lead agent rather than threading full transcripts
+        through history — explicitly to "minimize the game of telephone" and avoid copying large outputs
+        through the conversation. Composer's Agent orchestra mode defaults to <code>summary</code> handoff
+        for exactly this reason.
+      </p>
+
+      <p class="help-cta">
+        Ready to compose one? Switch to
+        <button class="help-jump" type="button" data-jump-mode="orchestra">Agent orchestra</button>.
+      </p>
+    </section>
+
+    <!-- §5 Sources -->
+    <section class="help-section" id="help-sources">
+      <div class="band-label">§5 · sources</div>
+      <h3 class="help-h3">Every URL cited above</h3>
+      <p class="help-section-blurb">All links fetched live during research. If a link rots, the citation (author · year · title) is enough to find a current mirror.</p>
+
+      <h4 class="help-sources-h4">Single-prompt techniques</h4>
+      <ul class="help-sources-list">
+        <li><a href="https://arxiv.org/abs/2005.14165" target="_blank" rel="noopener">Brown et al., 2020 — Language Models are Few-Shot Learners (GPT-3)</a></li>
+        <li><a href="https://arxiv.org/abs/2201.11903" target="_blank" rel="noopener">Wei et al., 2022 — Chain-of-Thought Prompting Elicits Reasoning</a></li>
+        <li><a href="https://arxiv.org/abs/2203.11171" target="_blank" rel="noopener">Wang et al., 2022 — Self-Consistency Improves CoT Reasoning</a></li>
+        <li><a href="https://arxiv.org/abs/2305.10601" target="_blank" rel="noopener">Yao et al., 2023 — Tree of Thoughts</a></li>
+        <li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">Yao et al., 2022 — ReAct: Synergizing Reasoning and Acting</a></li>
+        <li><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Shinn et al., 2023 — Reflexion: Verbal Reinforcement Learning</a></li>
+        <li><a href="https://arxiv.org/abs/2309.04269" target="_blank" rel="noopener">Adams et al., 2023 — Chain of Density Summarization</a></li>
+        <li><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" target="_blank" rel="noopener">Anthropic — Prompting best practices (system prompts / role)</a></li>
+        <li><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts" target="_blank" rel="noopener">Anthropic — Chain complex prompts</a></li>
+        <li><a href="https://openai.com/index/introducing-structured-outputs-in-the-api/" target="_blank" rel="noopener">OpenAI — Introducing Structured Outputs in the API (2024)</a></li>
+      </ul>
+
+      <h4 class="help-sources-h4">Orchestration patterns &amp; multi-agent</h4>
+      <ul class="help-sources-list">
+        <li><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Schluntz &amp; Zhang, 2024 — Building effective agents (Anthropic)</a></li>
+        <li><a href="https://www.anthropic.com/engineering/built-multi-agent-research-system" target="_blank" rel="noopener">Anthropic, 2025 — How we built our multi-agent research system</a></li>
+        <li><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Du et al., 2023 — Improving Factuality through Multiagent Debate</a></li>
+        <li><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph docs — Use the graph API (Send / map-reduce)</a></li>
+        <li><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">LangChain — langgraph-supervisor-py (hierarchical / supervisor)</a></li>
+      </ul>
+
+      <p class="help-foot">
+        Maintained alongside the Composer at
+        <a href="https://github.com/deokman420/prompt-composer" target="_blank" rel="noopener">github.com/deokman420/prompt-composer ↗</a>.
+        Spot a stale source or a missing technique? Open an issue.
+      </p>
+    </section>
+
+   </div><!-- /#helpView -->
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -389,7 +773,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>
