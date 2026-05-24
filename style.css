@@ -687,7 +687,7 @@ button { font: inherit; color: inherit; }
 
 .preview-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 16px 18px;
   position: sticky;
@@ -766,9 +766,9 @@ button { font: inherit; color: inherit; }
 
 .preview-text {
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.65;

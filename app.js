@@ -1283,13 +1283,14 @@ const ORCH_PATTERNS = {
     title: "Orchestrator + workers",
     blurb: "Lead agent decomposes the task and delegates to specialized workers in parallel. Anthropic's Research pattern; ~90% lift over single agent on internal evals.",
     diagram:
-`     ┌──────────────┐
-     │ Orchestrator │
-     └──┬───┬───┬───┘
-        │   │   │
-     ┌──▼┐ ┌▼┐ ┌▼──┐
-     │ W1│ │W2│ │W3 │
-     └───┘ └─┘ └───┘`,
+`   ┌─────────────────────┐
+   │     Orchestrator    │
+   └────┬─────┬─────┬────┘
+        │     │     │
+        ▼     ▼     ▼
+      ┌────┐┌────┐┌────┐
+      │ W1 ││ W2 ││ W3 │
+      └────┘└────┘└────┘`,
     seed: () => ({
       pattern: "orchestrator-worker",
       agents: [
@@ -1331,9 +1332,9 @@ const ORCH_PATTERNS = {
     title: "Sequential pipeline",
     blurb: "Agents run in a fixed order; each one's output is the next one's input. Use when steps are linear and stable (research → outline → write → review).",
     diagram:
-`  ┌────┐   ┌────┐   ┌────┐   ┌────┐
-  │ A1 │ → │ A2 │ → │ A3 │ → │ A4 │
-  └────┘   └────┘   └────┘   └────┘`,
+`   ┌────┐     ┌────┐     ┌────┐     ┌────┐
+   │ A1 │ ──▶ │ A2 │ ──▶ │ A3 │ ──▶ │ A4 │
+   └────┘     └────┘     └────┘     └────┘`,
     seed: () => ({
       pattern: "sequential",
       agents: [
@@ -1377,17 +1378,21 @@ const ORCH_PATTERNS = {
     title: "Parallel perspectives",
     blurb: "Agents work the same input from different angles simultaneously; results are merged. Use for multi-perspective review or red-teaming.",
     diagram:
-`         ┌────┐
-         │ In │
-         └─┬──┘
-      ┌────┼────┐
-   ┌──▼┐ ┌─▼─┐ ┌▼──┐
-   │ P1│ │P2 │ │P3 │
-   └─┬─┘ └─┬─┘ └─┬─┘
-     └─────┼─────┘
-         ┌─▼──┐
-         │Merge│
-         └────┘`,
+`          ┌───────┐
+          │  In   │
+          └───┬───┘
+       ┌──────┼──────┐
+       │      │      │
+       ▼      ▼      ▼
+    ┌─────┐┌─────┐┌─────┐
+    │ P1  ││ P2  ││ P3  │
+    └──┬──┘└──┬──┘└──┬──┘
+       │      │      │
+       └──────┼──────┘
+              ▼
+          ┌───────┐
+          │ Merge │
+          └───────┘`,
     seed: () => ({
       pattern: "parallel",
       agents: [
@@ -1428,14 +1433,15 @@ const ORCH_PATTERNS = {
     title: "Group chat / debate",
     blurb: "Agents converse in a shared thread under a chat manager. Use for deliberation, debate, or consensus-building.",
     diagram:
-`     ┌──────────────────┐
-     │  Chat Manager    │
-     └─┬──┬──┬──┬───────┘
-       │  │  │  │
-     ┌─▼┐┌▼┐┌▼┐┌▼─┐
-     │A1││A2││A3││A4│
-     └──┘└─┘└─┘└──┘
-     (turn-taking thread)`,
+`     ┌─────────────────────┐
+     │     Chat Manager    │
+     └──┬─────┬─────┬─────┬┘
+        │     │     │     │
+        ▼     ▼     ▼     ▼
+      ┌────┐┌────┐┌────┐┌────┐
+      │ A1 ││ A2 ││ A3 ││ A4 │
+      └────┘└────┘└────┘└────┘
+      (turn-taking thread)`,
     seed: () => ({
       pattern: "group-chat",
       agents: [
@@ -1465,13 +1471,14 @@ const ORCH_PATTERNS = {
     title: "Handoff / routing",
     blurb: "Each agent decides when to pass control to a more specialized one. Use for customer-support style triage or task routing.",
     diagram:
-`   ┌─────────┐   route
-   │ Triage  │──────────►┐
-   └─────────┘           │
-         │ fallback   ┌──▼───┐  ┌──────┐
-         └───────────►│ Spec │  │ Spec │
-                     │  A   │  │  B   │
-                     └──────┘  └──────┘`,
+`   ┌──────────┐     ┌──────────┐
+   │  Triage  │ ──▶ │  Spec A  │
+   └─────┬────┘     └──────────┘
+         │ fallback
+         ▼
+   ┌──────────┐
+   │  Spec B  │
+   └──────────┘`,
     seed: () => ({
       pattern: "handoff",
       agents: [
