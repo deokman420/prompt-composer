@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
 
@@ -36,6 +36,10 @@
         <p class="hero-sub">Build prompts in a structured R-G-C-B-T-S frame. Learn the technique while you write — local-only, no signup, no tracking.</p>
       </div>
       <div class="hero-meta" aria-live="polite">
+        <div class="mode-toggle" role="tablist" aria-label="Composer mode">
+          <button class="mode-tab is-active" type="button" role="tab" data-mode="single" title="Compose one prompt at a time using R-G-C-B-T-S">Single prompt</button>
+          <button class="mode-tab" type="button" role="tab" data-mode="orchestra" title="Compose a multi-agent orchestration: orchestrator + workers + coordination">Agent orchestra</button>
+        </div>
         <div class="slot-meter" title="Structural completeness of the 6 core slots">
           <span id="slotCount" class="slot-count">0 / 6 slots</span>
           <div class="slot-bar"><div id="slotFill" class="slot-fill"></div></div>
@@ -51,6 +55,7 @@
 
   <main class="container main">
 
+   <div id="classicView">
     <!-- ============== TEMPLATES + ARCHAEOLOGY ============== -->
     <section class="band">
       <div class="band-label">01 · jump-start</div>
@@ -226,6 +231,140 @@
         <ul id="draftsList" class="drafts-list"></ul>
       </div>
     </section>
+   </div><!-- /#classicView -->
+
+   <!-- ============== ORCHESTRATION VIEW ============== -->
+   <div id="orchestrationView" hidden>
+
+    <section class="band">
+      <div class="band-label">01 · jump-start</div>
+      <details class="library-card" open>
+        <summary>
+          <span>Pick a pattern</span>
+          <span class="library-hint">5 canonical orchestration shapes — each seeds defaults you can edit</span>
+        </summary>
+        <div id="patternPicker" class="pattern-grid"></div>
+      </details>
+
+      <details class="library-card">
+        <summary>
+          <span>Orchestra templates</span>
+          <span class="library-hint">Complete starter orchestras (research, pipeline, debate…)</span>
+        </summary>
+        <div id="orchTemplatesList" class="library-list"></div>
+      </details>
+
+      <details class="library-card">
+        <summary>
+          <span>Orchestra archaeology</span>
+          <span class="library-hint">Real multi-agent systems decomposed</span>
+        </summary>
+        <p class="library-blurb">Each entry is a publicly documented orchestration mapped into agents + coordination. Educational only — sources noted per entry.</p>
+        <div id="orchArchaeologyList" class="library-list"></div>
+      </details>
+    </section>
+
+    <section class="composer-grid">
+      <!-- left: orchestra editor -->
+      <div class="composer-form">
+
+        <div class="band-label inline">02 · pattern</div>
+        <div class="field-card">
+          <label class="field-label">
+            <span class="field-name">Active pattern: <span id="orchPatternName">orchestrator-worker</span></span>
+            <span class="field-hint" id="orchPatternBlurb">Lead agent decomposes the task and delegates to specialized workers in parallel.</span>
+          </label>
+          <pre id="orchPatternDiagram" class="pattern-diagram"></pre>
+        </div>
+
+        <div class="band-label inline">03 · agents</div>
+        <div id="orchAgentsList" class="orch-agents-list"></div>
+        <div class="orch-add-row">
+          <button id="orchAddWorkerBtn" type="button" class="link-btn">+ Add worker</button>
+          <span id="orchWorkerCount" class="orch-meta-chip">0 workers</span>
+        </div>
+
+        <div class="band-label inline">04 · coordination</div>
+        <div class="field-card">
+          <div class="orch-coord-row">
+            <label class="field-label">
+              <span class="field-name">Handoff format</span>
+              <span class="field-hint">How workers return results to the orchestrator. <strong>Summary</strong> is recommended — full transcripts pollute the orchestrator's context (15× more tokens).</span>
+            </label>
+            <select id="orchHandoff" class="suggestions-select">
+              <option value="summary">summary (recommended)</option>
+              <option value="json">structured JSON</option>
+              <option value="transcript">full transcript (risky)</option>
+            </select>
+          </div>
+
+          <div class="orch-coord-row">
+            <label class="field-label">
+              <span class="field-name">Max workers: <span id="orchMaxWorkersVal">3</span></span>
+              <span class="field-hint">Above 4 workers, orchestrator context frequently overflows. Keep tight.</span>
+            </label>
+            <input type="range" id="orchMaxWorkers" min="1" max="8" value="3" />
+          </div>
+
+          <div class="orch-coord-row">
+            <label class="field-label" for="orchTermination">
+              <span class="field-name">Termination rule</span>
+              <span class="field-hint">When does the orchestrator stop and synthesize?</span>
+            </label>
+            <textarea id="orchTermination" rows="2" spellcheck="true"
+              placeholder='e.g., "Stop when every worker has returned a summary, or after 2 rounds, whichever first."'></textarea>
+          </div>
+
+          <label class="grade-toggle" title="Workers share a memory store the orchestrator reads, instead of streaming results through the chat.">
+            <input type="checkbox" id="orchSharedMemory" />
+            <span>Workers write to a <strong>shared memory store</strong> (vs chat-only)</span>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button id="orchNewBtn" type="button" class="link-btn">New blank orchestra</button>
+          <button id="orchSaveBtn" type="button" class="link-btn">Save draft</button>
+          <button id="orchShareBtn" type="button" class="link-btn">Share link</button>
+        </div>
+      </div>
+
+      <!-- right: live preview -->
+      <aside class="preview-card">
+        <div class="preview-header">
+          <h2>Live preview · bundle</h2>
+          <span id="orchTokenEst" class="token-est" title="Rough estimate (chars ÷ 4). Multiplies fast with worker count.">~0 tokens <span class="token-est-suffix">· rough</span></span>
+        </div>
+        <div class="orch-health-row">
+          <span class="score-label">Orchestra health</span>
+          <span id="orchHealthVal" class="score-val">0</span>
+          <ul id="orchHealthIssues" class="orch-health-issues"></ul>
+        </div>
+        <div class="fmt-toggle" role="tablist" aria-label="Output format">
+          <button class="fmt-tab is-active orch-fmt-tab" type="button" role="tab" data-fmt="markdown">Markdown</button>
+          <button class="fmt-tab orch-fmt-tab" type="button" role="tab" data-fmt="xml">XML</button>
+        </div>
+        <p class="fmt-caption">Bundle contains: orchestrator system prompt · each worker system prompt · coordination protocol. Paste each block into the matching agent role in your framework (CrewAI, AutoGen, LangGraph, n8n, raw API).</p>
+        <pre id="orchPreview" class="preview-text" aria-live="polite"></pre>
+        <div class="preview-actions">
+          <button id="orchCopyBtn" class="copy-btn primary" type="button">Copy bundle</button>
+          <button id="orchCopyJsonBtn" class="copy-btn" type="button">Copy as JSON</button>
+        </div>
+        <p class="preview-hint">Local-only. Same encoding as Single mode — never leaves your browser.</p>
+      </aside>
+    </section>
+
+    <section class="drafts-card" id="orchDraftsCard" hidden>
+      <div class="band-label">recent orchestra drafts</div>
+      <div class="drafts-inner">
+        <div class="drafts-header">
+          <h3>Saved on this device</h3>
+          <button id="orchClearDraftsBtn" class="link-btn" type="button">Clear all</button>
+        </div>
+        <ul id="orchDraftsList" class="drafts-list"></ul>
+      </div>
+    </section>
+
+   </div><!-- /#orchestrationView -->
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -250,7 +389,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>

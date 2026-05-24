@@ -1258,3 +1258,947 @@ renderDrafts();
 renderLifetime();
 updatePreview();
 autoGrowAll();
+
+// ============================================================
+// ORCHESTRATION MODE
+// ============================================================
+// Self-contained. Touches only #orchestrationView and the
+// mode toggle. Classic single-prompt mode above is untouched.
+
+const ORCH_CFG = {
+  modeKey: "context.composer.mode.v1",       // "single" | "orchestra"
+  currentKey: "context.composer.orch.current.v1",
+  draftsKey: "context.composer.orch.drafts.v1",
+  formatKey: "context.composer.orch.format.v1",
+  bestKey: "context.composer.orch.best.v1",
+  maxDrafts: 10,
+};
+
+const ORCH_AGENT_SLOTS = ["role", "goal", "context", "bounds", "task", "success", "tools", "format"];
+
+// 5 canonical patterns — each seeds a starter agent set + diagram + blurb.
+// Wording is short on purpose: the diagrams are the teaching surface.
+const ORCH_PATTERNS = {
+  "orchestrator-worker": {
+    title: "Orchestrator + workers",
+    blurb: "Lead agent decomposes the task and delegates to specialized workers in parallel. Anthropic's Research pattern; ~90% lift over single agent on internal evals.",
+    diagram:
+`     ┌──────────────┐
+     │ Orchestrator │
+     └──┬───┬───┬───┘
+        │   │   │
+     ┌──▼┐ ┌▼┐ ┌▼──┐
+     │ W1│ │W2│ │W3 │
+     └───┘ └─┘ └───┘`,
+    seed: () => ({
+      pattern: "orchestrator-worker",
+      agents: [
+        mkAgent("orchestrator", "Lead orchestrator", {
+          role: "Lead research orchestrator. Plans, delegates, never executes the work itself.",
+          goal: "Decompose the user's task into independent subtasks and delegate each to a specialized worker; reconcile results into a final answer with citations.",
+          context: "- Workers run in parallel with isolated context windows.\n- Workers return condensed summaries (not transcripts).\n- The user's task arrives as the first user message.",
+          bounds: "- Delegate, don't do. Never perform a worker's job yourself.\n- Don't ask the user for missing info you can have a worker fetch.\n- Don't expand scope beyond the user's request.",
+          task: "1. Read the user's task.\n2. Draft a plan: list 2–N independent subtasks.\n3. For each subtask, write a focused brief (objective, format, tools, boundaries) and dispatch to the matching worker.\n4. Collect summaries.\n5. Reconcile into the final answer; cite each claim to the worker it came from.",
+          success: "Final answer addresses the user's task end-to-end, every non-trivial claim is attributed to a worker summary, and no contradictions are left unresolved.",
+          tools: "Worker dispatch only. No direct tool calls.",
+          format: "Plan first (numbered), then 'Final answer:' block with inline [W1], [W2] citations.",
+        }),
+        mkAgent("worker", "Research worker", {
+          role: "Focused research worker. Narrow scope, deep depth.",
+          goal: "Answer exactly the brief sent by the orchestrator and return a condensed summary.",
+          context: "- You receive: objective, expected format, allowed tools, boundaries.\n- You do not see the user's full task or other workers' work.",
+          bounds: "- Don't expand scope beyond your brief.\n- Don't return a transcript — return a summary.\n- Flag uncertainty; don't fabricate.",
+          task: "1. Confirm you understand the brief.\n2. Use tools to gather evidence.\n3. Return a summary in the requested format.",
+          success: "Summary directly answers the brief, ≤ 300 words, cites sources, flags unknowns explicitly.",
+          tools: "Web search, file read.",
+          format: "Summary block + sources list.",
+        }),
+        mkAgent("worker", "Synthesis worker", {
+          role: "Analytical worker that compares and contrasts multiple inputs.",
+          goal: "Take the orchestrator's brief and produce a structured comparison or synthesis.",
+          context: "- You may receive multiple research summaries as input.",
+          bounds: "- Don't introduce facts not in the inputs.\n- Don't summarize — analyze.",
+          task: "1. Identify the dimensions being compared.\n2. Build a table or structured comparison.\n3. Highlight tradeoffs.",
+          success: "Output is a markdown table or structured list with clear axes.",
+          tools: "No external tools — analysis only.",
+          format: "Markdown table.",
+        }),
+      ],
+      coordination: { handoffFormat: "summary", maxWorkers: 5, terminationRule: "Stop when every dispatched worker returns a summary, or after 2 dispatch rounds, whichever first.", sharedMemory: true },
+    }),
+  },
+  "sequential": {
+    title: "Sequential pipeline",
+    blurb: "Agents run in a fixed order; each one's output is the next one's input. Use when steps are linear and stable (research → outline → write → review).",
+    diagram:
+`  ┌────┐   ┌────┐   ┌────┐   ┌────┐
+  │ A1 │ → │ A2 │ → │ A3 │ → │ A4 │
+  └────┘   └────┘   └────┘   └────┘`,
+    seed: () => ({
+      pattern: "sequential",
+      agents: [
+        mkAgent("worker", "1. Researcher", {
+          role: "Researcher who gathers raw material.",
+          goal: "Collect facts and sources relevant to the user's topic.",
+          bounds: "- Don't write prose — collect material only.",
+          task: "1. Identify the 3–5 angles worth covering.\n2. Gather 2–4 sources per angle.\n3. Return a structured notes file.",
+          success: "Output is a markdown notes file grouped by angle with source URLs.",
+          format: "Markdown.",
+        }),
+        mkAgent("worker", "2. Outliner", {
+          role: "Outliner who shapes raw notes into a structure.",
+          goal: "Turn the researcher's notes into a numbered outline.",
+          bounds: "- Don't add facts not in the notes.",
+          task: "1. Identify the thesis.\n2. Group notes into sections.\n3. Order sections for the reader.",
+          success: "Numbered outline with one line per section explaining what goes there.",
+          format: "Numbered markdown list.",
+        }),
+        mkAgent("worker", "3. Writer", {
+          role: "Writer who drafts from an outline.",
+          goal: "Write the full draft following the outline.",
+          bounds: "- Follow the outline order.\n- Don't editorialize beyond the notes.",
+          task: "Draft the full piece section by section.",
+          success: "Full prose draft, all outline sections present.",
+          format: "Markdown.",
+        }),
+        mkAgent("worker", "4. Reviewer", {
+          role: "Editor reviewing for clarity and accuracy.",
+          goal: "Return a revised draft + change log.",
+          bounds: "- Don't change facts.\n- Keep voice consistent.",
+          task: "1. Read the draft.\n2. Tighten and fix.\n3. List changes.",
+          success: "Revised draft + bulleted change log.",
+          format: "Markdown.",
+        }),
+      ],
+      coordination: { handoffFormat: "summary", maxWorkers: 6, terminationRule: "Stop after the last agent completes.", sharedMemory: false },
+    }),
+  },
+  "parallel": {
+    title: "Parallel perspectives",
+    blurb: "Agents work the same input from different angles simultaneously; results are merged. Use for multi-perspective review or red-teaming.",
+    diagram:
+`         ┌────┐
+         │ In │
+         └─┬──┘
+      ┌────┼────┐
+   ┌──▼┐ ┌─▼─┐ ┌▼──┐
+   │ P1│ │P2 │ │P3 │
+   └─┬─┘ └─┬─┘ └─┬─┘
+     └─────┼─────┘
+         ┌─▼──┐
+         │Merge│
+         └────┘`,
+    seed: () => ({
+      pattern: "parallel",
+      agents: [
+        mkAgent("orchestrator", "Merger", {
+          role: "Merger who reconciles parallel perspectives into one output.",
+          goal: "Combine each perspective's output into a single coherent answer.",
+          bounds: "- Preserve disagreements; don't paper over them.",
+          task: "1. Read every perspective's output.\n2. Group agreements and disagreements.\n3. Produce the merged answer with a 'Disagreements' section if any.",
+          success: "One merged answer + an explicit 'Disagreements' section when perspectives diverge.",
+          format: "Markdown with 'Merged' and 'Disagreements' sections.",
+        }),
+        mkAgent("worker", "Optimist perspective", {
+          role: "Devil's advocate for the proposal — argues why it works.",
+          goal: "Give the strongest case for the proposal.",
+          task: "List 3–5 reasons this works.",
+          success: "Markdown bullets, no hedging.",
+          format: "Markdown bullets.",
+        }),
+        mkAgent("worker", "Skeptic perspective", {
+          role: "Red-team reviewer — argues why it fails.",
+          goal: "Give the strongest case against the proposal.",
+          task: "List 3–5 failure modes.",
+          success: "Markdown bullets, concrete scenarios.",
+          format: "Markdown bullets.",
+        }),
+        mkAgent("worker", "Pragmatist perspective", {
+          role: "Implementer — what would shipping this actually require?",
+          goal: "Surface the implementation cost and risk.",
+          task: "List 3–5 concrete implementation requirements.",
+          success: "Markdown bullets, each with rough effort estimate.",
+          format: "Markdown bullets.",
+        }),
+      ],
+      coordination: { handoffFormat: "summary", maxWorkers: 5, terminationRule: "Run all perspectives in parallel; merge when all return.", sharedMemory: true },
+    }),
+  },
+  "group-chat": {
+    title: "Group chat / debate",
+    blurb: "Agents converse in a shared thread under a chat manager. Use for deliberation, debate, or consensus-building.",
+    diagram:
+`     ┌──────────────────┐
+     │  Chat Manager    │
+     └─┬──┬──┬──┬───────┘
+       │  │  │  │
+     ┌─▼┐┌▼┐┌▼┐┌▼─┐
+     │A1││A2││A3││A4│
+     └──┘└─┘└─┘└──┘
+     (turn-taking thread)`,
+    seed: () => ({
+      pattern: "group-chat",
+      agents: [
+        mkAgent("orchestrator", "Chat manager", {
+          role: "Chat manager who picks the next speaker and decides when to end.",
+          goal: "Run a productive multi-agent discussion that converges on an answer.",
+          bounds: "- Don't speak as a domain agent yourself.\n- Don't let one agent dominate.",
+          task: "1. Open the topic.\n2. Pick the next speaker based on relevance.\n3. End when convergence reached or after N turns.\n4. Post the final consensus.",
+          success: "Conversation has ≥1 turn from every participant; ends with an explicit consensus or 'no consensus' note.",
+          format: "Speaker tags + final 'Consensus:' block.",
+        }),
+        mkAgent("worker", "Domain expert", {
+          role: "Subject-matter expert on the topic. Speak only on technical merits.",
+          goal: "Offer factual depth when called on.",
+          format: "≤ 100 words per turn.",
+        }),
+        mkAgent("worker", "User advocate", {
+          role: "User advocate. Speak for whoever uses the thing being discussed.",
+          goal: "Surface user impact when called on.",
+          format: "≤ 100 words per turn.",
+        }),
+      ],
+      coordination: { handoffFormat: "transcript", maxWorkers: 4, terminationRule: "End on convergence or after 8 total turns.", sharedMemory: true },
+    }),
+  },
+  "handoff": {
+    title: "Handoff / routing",
+    blurb: "Each agent decides when to pass control to a more specialized one. Use for customer-support style triage or task routing.",
+    diagram:
+`   ┌─────────┐   route
+   │ Triage  │──────────►┐
+   └─────────┘           │
+         │ fallback   ┌──▼───┐  ┌──────┐
+         └───────────►│ Spec │  │ Spec │
+                     │  A   │  │  B   │
+                     └──────┘  └──────┘`,
+    seed: () => ({
+      pattern: "handoff",
+      agents: [
+        mkAgent("orchestrator", "Triage", {
+          role: "Triage agent that classifies the request and hands off.",
+          goal: "Read the request and route to the right specialist; only answer directly if no specialist fits.",
+          bounds: "- Don't answer outside your shallow knowledge.\n- Always state the handoff decision explicitly.",
+          task: "1. Classify the request (category, priority).\n2. Decide: handle here, or hand off to which specialist?\n3. State the decision + hand off (or answer briefly).",
+          success: "Output names the chosen specialist (or 'self') with a one-line reason.",
+          format: "JSON: {decision, target, reason, brief}.",
+        }),
+        mkAgent("worker", "Specialist A", {
+          role: "Domain specialist (rename to your domain).",
+          goal: "Answer requests routed by Triage that match your specialty.",
+          bounds: "- Decline politely if the request isn't in your scope and route back to Triage.",
+          task: "1. Read the brief from Triage.\n2. Answer.\n3. Flag any follow-ups Triage should re-route.",
+          success: "In-scope request fully answered; out-of-scope explicitly returned.",
+        }),
+      ],
+      coordination: { handoffFormat: "json", maxWorkers: 6, terminationRule: "Stop when the request is fully resolved or all specialists decline.", sharedMemory: false },
+    }),
+  },
+};
+
+function uid() { return "a" + Math.random().toString(36).slice(2, 8); }
+
+function mkAgent(kind, name, slots) {
+  const empty = Object.fromEntries(ORCH_AGENT_SLOTS.map((s) => [s, ""]));
+  return {
+    id: uid(),
+    kind, // "orchestrator" | "worker"
+    name,
+    collapsed: false,
+    slots: { ...empty, ...(slots || {}) },
+  };
+}
+
+// ---- Orchestra templates (complete starter orchestras) ----
+const ORCH_TEMPLATES = {
+  "anthropic-research": {
+    title: "Anthropic-style research",
+    blurb: "Lead orchestrator + parallel research workers + synthesis worker",
+    state: ORCH_PATTERNS["orchestrator-worker"].seed,
+  },
+  "doc-pipeline": {
+    title: "Doc pipeline (research → outline → write → review)",
+    blurb: "Sequential 4-stage content production",
+    state: ORCH_PATTERNS["sequential"].seed,
+  },
+  "red-team-review": {
+    title: "Red-team review (parallel)",
+    blurb: "Optimist + skeptic + pragmatist on the same proposal, then merge",
+    state: ORCH_PATTERNS["parallel"].seed,
+  },
+  "support-triage": {
+    title: "Support triage (handoff)",
+    blurb: "Triage classifies, then routes to a specialist",
+    state: ORCH_PATTERNS["handoff"].seed,
+  },
+  "kvac-commander": {
+    title: "KVAC Commander + specialists",
+    blurb: "User's own framework: Commander dispatches to a focused subset of specialists",
+    state: () => ({
+      pattern: "orchestrator-worker",
+      agents: [
+        mkAgent("orchestrator", "Commander", {
+          role: "KVAC Commander. Atomizes user intent into file-level tasks and dispatches to the smallest qualified specialist set.",
+          goal: "Translate the user's request into a sequenced plan of specialist consultations, then synthesize results.",
+          bounds: "- Never execute a specialist's work.\n- Prefer the smallest specialist set that can answer.\n- Atomize tasks to file-level precision before dispatching.",
+          task: "1. Parse intent.\n2. Atomize into tasks.\n3. Pick consultation mode (focused | broad | adversarial | sequential).\n4. Dispatch.\n5. Reconcile.",
+          success: "Plan, dispatch log, and final synthesis are all present.",
+          format: "Markdown: ## Plan, ## Dispatch, ## Synthesis.",
+        }),
+        mkAgent("worker", "Architecture specialist", {
+          role: "System architect. Designs across components, not within them.",
+          goal: "Answer architecture questions from Commander; defer implementation details.",
+          format: "Markdown.",
+        }),
+        mkAgent("worker", "Implementation specialist", {
+          role: "Implementer. Writes the code for a single named file or function.",
+          goal: "Produce the implementation for the file Commander names.",
+          bounds: "- Touch only the file named in the brief.",
+          format: "Code block + one-line change summary.",
+        }),
+        mkAgent("worker", "Verification specialist", {
+          role: "Verifier. Reads outputs and challenges them.",
+          goal: "Tell Commander whether the work passes the user's success criteria.",
+          format: "JSON: {passes: bool, blocking_issues: [...]}.",
+        }),
+      ],
+      coordination: { handoffFormat: "json", maxWorkers: 4, terminationRule: "Stop when Verification returns passes:true or after 2 retry rounds.", sharedMemory: true },
+    }),
+  },
+};
+
+// ---- Orchestra archaeology (decomposed public systems) ----
+const ORCH_ARCHAEOLOGY = {
+  "anthropic-research-prod": {
+    title: "Anthropic Research (lead agent)",
+    blurb: "Production multi-agent research system",
+    source: "Anthropic · anthropic.com/engineering/multi-agent-research-system",
+    state: () => ({
+      pattern: "orchestrator-worker",
+      agents: [
+        mkAgent("orchestrator", "Lead agent", {
+          role: "Lead research agent. Plans, delegates, and reconciles.",
+          goal: "Answer the user's research query by decomposing it, dispatching parallel subagents, and synthesizing their findings.",
+          context: "- Subagents have isolated context windows and their own tool access.\n- Plan is persisted to memory so the lead can re-strategize if early findings shift direction.",
+          bounds: "- Don't execute searches yourself once subagents are spawned.\n- Don't fabricate citations — every claim must trace to a subagent finding.",
+          task: "1. Analyze query.\n2. Save plan to memory.\n3. Spawn subagents for independent directions.\n4. Read condensed findings.\n5. Reconcile into a cited final answer.",
+          success: "Final answer cites every non-trivial claim and addresses the original query end-to-end.",
+          tools: "subagent_dispatch, memory_write, memory_read.",
+          format: "Cited prose answer.",
+        }),
+        mkAgent("worker", "Search subagent", {
+          role: "Search-focused subagent. One direction at a time.",
+          goal: "Investigate the brief from the lead and return a condensed, cited summary.",
+          context: "- Each subagent gets: objective, output format, tools/sources, task boundaries.",
+          bounds: "- Don't expand beyond your brief.\n- Return summary, not transcript.",
+          task: "Use tools → gather → condense.",
+          success: "Summary directly answers the brief with citations.",
+          tools: "web_search, web_fetch.",
+          format: "Summary + sources.",
+        }),
+      ],
+      coordination: { handoffFormat: "summary", maxWorkers: 5, terminationRule: "Stop when lead's plan is fully addressed.", sharedMemory: true },
+    }),
+  },
+  "crewai-crew": {
+    title: "CrewAI crew (role-based)",
+    blurb: "Canonical CrewAI shape: a crew of role-defined agents working a sequenced task list",
+    source: "CrewAI docs · crewai.com",
+    state: () => ({
+      pattern: "sequential",
+      agents: [
+        mkAgent("worker", "Researcher", {
+          role: "Senior Research Analyst. Expert at finding emerging trends.",
+          goal: "Uncover cutting-edge developments in the user's topic.",
+          context: "- backstory: years of analyst experience\n- delegation: false",
+          task: "Conduct a comprehensive analysis of the topic.",
+          success: "Detailed report on the latest trends.",
+          tools: "search_tool.",
+          format: "Detailed report.",
+        }),
+        mkAgent("worker", "Writer", {
+          role: "Tech Content Strategist.",
+          goal: "Craft compelling content from the analysis.",
+          context: "- backstory: renowned for clarity\n- delegation: true (can delegate back to Researcher)",
+          task: "Write a blog post draft using the analysis.",
+          success: "Blog post draft ready to ship.",
+          format: "Markdown.",
+        }),
+      ],
+      coordination: { handoffFormat: "summary", maxWorkers: 4, terminationRule: "Process=sequential; stop after final task.", sharedMemory: false },
+    }),
+  },
+  "autogen-group": {
+    title: "AutoGen group chat",
+    blurb: "Multi-agent conversational thread under a chat manager",
+    source: "Microsoft AutoGen · microsoft.github.io/autogen",
+    state: () => ({
+      pattern: "group-chat",
+      agents: [
+        mkAgent("orchestrator", "GroupChatManager", {
+          role: "Group chat manager. Selects next speaker, manages turn-taking.",
+          goal: "Run the group chat to convergence on the user's task.",
+          bounds: "- Don't speak as a participant.\n- Enforce max_round.",
+          task: "1. Init chat with user task.\n2. Select next speaker by relevance.\n3. Terminate on convergence or max_round.",
+          success: "Final agent posts an answer accepted by the UserProxyAgent.",
+          format: "Speaker-tagged transcript.",
+        }),
+        mkAgent("worker", "AssistantAgent", {
+          role: "Assistant agent with code-writing ability.",
+          goal: "Write code to solve the user task.",
+          tools: "code_execution.",
+          format: "Code blocks + brief prose.",
+        }),
+        mkAgent("worker", "UserProxyAgent", {
+          role: "Stands in for the user; executes code and gives feedback.",
+          goal: "Run the assistant's code and report results.",
+          tools: "shell.",
+          format: "Result blocks.",
+        }),
+      ],
+      coordination: { handoffFormat: "transcript", maxWorkers: 4, terminationRule: "Until UserProxy says TERMINATE or max_round reached.", sharedMemory: true },
+    }),
+  },
+};
+
+// ---- DOM refs ----
+const orchEl = {
+  classicView: document.getElementById("classicView"),
+  view: document.getElementById("orchestrationView"),
+  modeTabs: document.querySelectorAll(".mode-tab"),
+  patternPicker: document.getElementById("patternPicker"),
+  patternName: document.getElementById("orchPatternName"),
+  patternBlurb: document.getElementById("orchPatternBlurb"),
+  patternDiagram: document.getElementById("orchPatternDiagram"),
+  agentsList: document.getElementById("orchAgentsList"),
+  addWorker: document.getElementById("orchAddWorkerBtn"),
+  workerCount: document.getElementById("orchWorkerCount"),
+  handoff: document.getElementById("orchHandoff"),
+  maxWorkers: document.getElementById("orchMaxWorkers"),
+  maxWorkersVal: document.getElementById("orchMaxWorkersVal"),
+  termination: document.getElementById("orchTermination"),
+  sharedMemory: document.getElementById("orchSharedMemory"),
+  preview: document.getElementById("orchPreview"),
+  tokenEst: document.getElementById("orchTokenEst"),
+  healthVal: document.getElementById("orchHealthVal"),
+  healthIssues: document.getElementById("orchHealthIssues"),
+  fmtTabs: document.querySelectorAll(".orch-fmt-tab"),
+  copy: document.getElementById("orchCopyBtn"),
+  copyJson: document.getElementById("orchCopyJsonBtn"),
+  newBtn: document.getElementById("orchNewBtn"),
+  saveBtn: document.getElementById("orchSaveBtn"),
+  shareBtn: document.getElementById("orchShareBtn"),
+  templatesList: document.getElementById("orchTemplatesList"),
+  archaeologyList: document.getElementById("orchArchaeologyList"),
+  draftsCard: document.getElementById("orchDraftsCard"),
+  draftsList: document.getElementById("orchDraftsList"),
+  clearDrafts: document.getElementById("orchClearDraftsBtn"),
+  slotMeter: document.querySelector(".slot-meter"),
+  scoreLabel: document.querySelector(".score-chip .score-label"),
+};
+
+// ---- state ----
+let orchState = ORCH_PATTERNS["orchestrator-worker"].seed();
+
+function orchGetFormat() {
+  return localStorage.getItem(ORCH_CFG.formatKey) === "xml" ? "xml" : "markdown";
+}
+function orchSetFormat(fmt) {
+  localStorage.setItem(ORCH_CFG.formatKey, fmt);
+  orchEl.fmtTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.fmt === fmt));
+  orchEl.copy.textContent = fmt === "xml" ? "Copy bundle (XML)" : "Copy bundle (Markdown)";
+  orchRenderPreview();
+}
+
+function orchPersist() {
+  try { localStorage.setItem(ORCH_CFG.currentKey, JSON.stringify(orchState)); } catch {}
+}
+function orchRestore() {
+  try {
+    const raw = localStorage.getItem(ORCH_CFG.currentKey);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s || !s.pattern || !Array.isArray(s.agents)) return false;
+    orchState = s;
+    return true;
+  } catch { return false; }
+}
+
+// ---- pattern picker ----
+function orchRenderPatternPicker() {
+  orchEl.patternPicker.innerHTML = "";
+  for (const [id, p] of Object.entries(ORCH_PATTERNS)) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "pattern-card" + (orchState.pattern === id ? " is-active" : "");
+    card.innerHTML = `<span class="pattern-card-title"></span><span class="pattern-card-blurb"></span>`;
+    card.querySelector(".pattern-card-title").textContent = p.title;
+    card.querySelector(".pattern-card-blurb").textContent = p.blurb;
+    card.addEventListener("click", () => orchSwitchPattern(id));
+    orchEl.patternPicker.appendChild(card);
+  }
+}
+
+function orchSwitchPattern(id) {
+  if (!ORCH_PATTERNS[id]) return;
+  if (orchAnyContent() && !confirm(`Switch to "${ORCH_PATTERNS[id].title}"? Current agents will be replaced with the pattern's defaults.`)) return;
+  orchState = ORCH_PATTERNS[id].seed();
+  orchRenderAll();
+}
+
+function orchRenderActivePattern() {
+  const p = ORCH_PATTERNS[orchState.pattern] || ORCH_PATTERNS["orchestrator-worker"];
+  orchEl.patternName.textContent = p.title;
+  orchEl.patternBlurb.textContent = p.blurb;
+  orchEl.patternDiagram.textContent = p.diagram;
+}
+
+// ---- agents ----
+function orchAnyContent() {
+  return orchState.agents.some((a) => Object.values(a.slots).some((v) => v && v.trim()));
+}
+
+function orchRenderAgents() {
+  orchEl.agentsList.innerHTML = "";
+  orchState.agents.forEach((agent, idx) => orchEl.agentsList.appendChild(orchAgentCard(agent, idx)));
+  const workers = orchState.agents.filter((a) => a.kind === "worker").length;
+  orchEl.workerCount.textContent = workers === 1 ? "1 worker" : `${workers} workers`;
+}
+
+function orchAgentCard(agent, idx) {
+  const card = document.createElement("div");
+  card.className = "orch-agent" + (agent.kind === "orchestrator" ? " is-orchestrator" : " is-worker") + (agent.collapsed ? " is-collapsed" : "");
+  const head = document.createElement("div");
+  head.className = "orch-agent-head";
+  const kind = document.createElement("span");
+  kind.className = "orch-agent-kind";
+  kind.textContent = agent.kind === "orchestrator" ? "lead" : "worker";
+  const nameInput = document.createElement("input");
+  nameInput.className = "orch-agent-name";
+  nameInput.value = agent.name;
+  nameInput.addEventListener("input", () => { agent.name = nameInput.value; orchPersist(); orchRenderPreview(); });
+  const summary = document.createElement("span");
+  summary.className = "orch-agent-summary";
+  summary.textContent = (agent.slots.role || "(no role set)").slice(0, 60);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "orch-agent-toggle";
+  toggle.textContent = agent.collapsed ? "expand ▾" : "collapse ▴";
+  toggle.addEventListener("click", (e) => { e.stopPropagation(); agent.collapsed = !agent.collapsed; orchPersist(); orchRenderAgents(); });
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "orch-agent-del";
+  del.title = "Delete agent";
+  del.textContent = "✕";
+  del.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (agent.kind === "orchestrator") {
+      const orchCount = orchState.agents.filter((a) => a.kind === "orchestrator").length;
+      if (orchCount <= 1 && !confirm("Delete the only orchestrator? You'll need to add one back.")) return;
+    }
+    orchState.agents.splice(idx, 1);
+    orchPersist();
+    orchRenderAgents();
+    orchRenderPreview();
+  });
+  head.append(kind, nameInput, summary, toggle, del);
+
+  const body = document.createElement("div");
+  body.className = "orch-agent-body";
+  for (const slot of ORCH_AGENT_SLOTS) {
+    const wrap = document.createElement("div");
+    wrap.className = "orch-slot";
+    const label = document.createElement("span");
+    label.className = "orch-slot-label";
+    label.textContent = slot;
+    const ta = document.createElement("textarea");
+    ta.rows = 2;
+    ta.spellcheck = true;
+    ta.value = agent.slots[slot] || "";
+    ta.placeholder = orchSlotPlaceholder(slot);
+    ta.addEventListener("input", () => {
+      agent.slots[slot] = ta.value;
+      if (slot === "role") summary.textContent = (ta.value || "(no role set)").slice(0, 60);
+      autoGrow(ta);
+      orchPersist();
+      orchRenderPreview();
+    });
+    wrap.append(label, ta);
+    body.appendChild(wrap);
+    requestAnimationFrame(() => autoGrow(ta));
+  }
+
+  card.append(head, body);
+  return card;
+}
+
+function orchSlotPlaceholder(slot) {
+  switch (slot) {
+    case "role": return "Who this agent is.";
+    case "goal": return "Single outcome, verb-first.";
+    case "context": return "Facts this agent needs that won't be in the brief.";
+    case "bounds": return "What this agent must not do.";
+    case "task": return "Concrete steps.";
+    case "success": return "Checkable result shape.";
+    case "tools": return "Allowed tools / APIs.";
+    case "format": return "Output shape (markdown / JSON / table).";
+    default: return "";
+  }
+}
+
+orchEl.addWorker?.addEventListener("click", () => {
+  orchState.agents.push(mkAgent("worker", `Worker ${orchState.agents.filter(a=>a.kind==="worker").length + 1}`, {}));
+  orchPersist();
+  orchRenderAgents();
+  orchRenderPreview();
+});
+
+// ---- coordination ----
+function orchRenderCoordination() {
+  const c = orchState.coordination;
+  orchEl.handoff.value = c.handoffFormat;
+  orchEl.maxWorkers.value = String(c.maxWorkers);
+  orchEl.maxWorkersVal.textContent = String(c.maxWorkers);
+  orchEl.termination.value = c.terminationRule || "";
+  orchEl.sharedMemory.checked = !!c.sharedMemory;
+}
+
+orchEl.handoff?.addEventListener("change", () => { orchState.coordination.handoffFormat = orchEl.handoff.value; orchPersist(); orchRenderPreview(); });
+orchEl.maxWorkers?.addEventListener("input", () => {
+  const v = Number(orchEl.maxWorkers.value);
+  orchState.coordination.maxWorkers = v;
+  orchEl.maxWorkersVal.textContent = String(v);
+  orchPersist();
+  orchRenderPreview();
+});
+orchEl.termination?.addEventListener("input", () => { orchState.coordination.terminationRule = orchEl.termination.value; orchPersist(); orchRenderPreview(); });
+orchEl.sharedMemory?.addEventListener("change", () => { orchState.coordination.sharedMemory = orchEl.sharedMemory.checked; orchPersist(); orchRenderPreview(); });
+
+// ---- render bundle (preview) ----
+function orchRenderBundleMd(s) {
+  const parts = [];
+  parts.push(`# ORCHESTRA · pattern: ${s.pattern}`);
+  for (const agent of s.agents) {
+    const tag = agent.kind === "orchestrator" ? "ORCHESTRATOR" : "WORKER";
+    parts.push(`---\n\n## ${tag} — ${agent.name}`);
+    for (const slot of ORCH_AGENT_SLOTS) {
+      const v = (agent.slots[slot] || "").trim();
+      if (!v) continue;
+      parts.push(`### ${slot.toUpperCase()}\n${v}`);
+    }
+  }
+  parts.push(`---\n\n## COORDINATION\n- Handoff format: ${s.coordination.handoffFormat}\n- Max workers: ${s.coordination.maxWorkers}\n- Shared memory: ${s.coordination.sharedMemory ? "yes" : "no (chat only)"}\n- Termination: ${s.coordination.terminationRule || "(not set)"}`);
+  return parts.join("\n\n");
+}
+
+function orchRenderBundleXml(s) {
+  const parts = [`<orchestra pattern="${escXml(s.pattern)}">`];
+  for (const agent of s.agents) {
+    parts.push(`  <agent kind="${escXml(agent.kind)}" name="${escXml(agent.name)}">`);
+    for (const slot of ORCH_AGENT_SLOTS) {
+      const v = (agent.slots[slot] || "").trim();
+      if (!v) continue;
+      parts.push(`    <${slot}>${escXml(v)}</${slot}>`);
+    }
+    parts.push(`  </agent>`);
+  }
+  parts.push(`  <coordination>`);
+  parts.push(`    <handoff_format>${escXml(s.coordination.handoffFormat)}</handoff_format>`);
+  parts.push(`    <max_workers>${s.coordination.maxWorkers}</max_workers>`);
+  parts.push(`    <shared_memory>${s.coordination.sharedMemory}</shared_memory>`);
+  parts.push(`    <termination_rule>${escXml(s.coordination.terminationRule || "")}</termination_rule>`);
+  parts.push(`  </coordination>`);
+  parts.push(`</orchestra>`);
+  return parts.join("\n");
+}
+
+function escXml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function orchRenderPreview() {
+  const fmt = orchGetFormat();
+  const out = fmt === "xml" ? orchRenderBundleXml(orchState) : orchRenderBundleMd(orchState);
+  orchEl.preview.textContent = out;
+  const tokens = Math.max(0, Math.round(out.length / 4));
+  orchEl.tokenEst.innerHTML = `~${tokens} tokens <span class="token-est-suffix">· rough</span>`;
+  orchRenderHealth();
+}
+
+// ---- health score ----
+function orchHealth(s) {
+  const issues = [];
+  const oks = [];
+  let score = 0;
+
+  const orchAgents = s.agents.filter((a) => a.kind === "orchestrator");
+  const workers = s.agents.filter((a) => a.kind === "worker");
+
+  // 1) Exactly one orchestrator (for non-parallel/non-sequential we still want a lead)
+  if (orchAgents.length === 1) { score += 10; oks.push("exactly one lead agent"); }
+  else if (orchAgents.length === 0) issues.push("no orchestrator/lead agent defined");
+  else issues.push(`${orchAgents.length} orchestrators — pick one lead`);
+
+  // 2) At least one worker
+  if (workers.length >= 1) { score += 5; oks.push(`${workers.length} worker${workers.length===1?"":"s"} defined`); }
+  else issues.push("no workers defined");
+
+  // 3) Every agent has role + goal
+  const incomplete = s.agents.filter((a) => !a.slots.role.trim() || !a.slots.goal.trim());
+  if (incomplete.length === 0) { score += 15; oks.push("every agent has role + goal"); }
+  else issues.push(`${incomplete.length} agent(s) missing role or goal`);
+
+  // 4) Every worker has bounds
+  const unbounded = workers.filter((w) => !w.slots.bounds.trim());
+  if (workers.length && unbounded.length === 0) { score += 10; oks.push("every worker has bounds"); }
+  else if (unbounded.length) issues.push(`${unbounded.length} worker(s) have no bounds — scope creep risk`);
+
+  // 5) Every worker has format
+  const noFormat = workers.filter((w) => !w.slots.format.trim());
+  if (workers.length && noFormat.length === 0) { score += 10; oks.push("every worker has output format"); }
+  else if (noFormat.length) issues.push(`${noFormat.length} worker(s) have no output format — handoff will be ambiguous`);
+
+  // 6) Orchestrator says "delegate" / "don't"
+  const lead = orchAgents[0];
+  if (lead) {
+    const blob = (lead.slots.bounds + " " + lead.slots.role + " " + lead.slots.goal).toLowerCase();
+    if (/(delegate|don'?t do|don'?t execute|never perform|never execute)/.test(blob)) { score += 10; oks.push("lead is told to delegate, not do"); }
+    else issues.push('lead has no "delegate, don\'t do" rule');
+  }
+
+  // 7) Handoff format is structured (summary/json, not transcript)
+  if (s.coordination.handoffFormat === "summary" || s.coordination.handoffFormat === "json") { score += 10; oks.push(`handoff = ${s.coordination.handoffFormat} (avoids context bloat)`); }
+  else issues.push("handoff = transcript — orchestrator context will bloat fast");
+
+  // 8) Worker count ≤ 5
+  if (workers.length <= 5) { score += 10; oks.push(`worker count ${workers.length} ≤ 5 (context-safe)`); }
+  else issues.push(`${workers.length} workers — context overflow likely above 4–5`);
+
+  // 9) Role overlap (string similarity of role text)
+  const overlaps = [];
+  for (let i = 0; i < workers.length; i++) {
+    for (let j = i + 1; j < workers.length; j++) {
+      const a = (workers[i].slots.role || "").toLowerCase();
+      const b = (workers[j].slots.role || "").toLowerCase();
+      if (a.length > 20 && b.length > 20 && simpleOverlap(a, b) > 0.6) {
+        overlaps.push(`"${workers[i].name}" ≈ "${workers[j].name}"`);
+      }
+    }
+  }
+  if (workers.length >= 2 && overlaps.length === 0) { score += 10; oks.push("no overlapping worker roles"); }
+  else if (overlaps.length) issues.push("overlapping roles: " + overlaps.join(", "));
+
+  // 10) Termination rule set
+  if ((s.coordination.terminationRule || "").trim().length >= 10) { score += 10; oks.push("explicit termination rule"); }
+  else issues.push("no termination rule — agents may loop");
+
+  return { score: Math.min(100, score), issues, oks };
+}
+
+function simpleOverlap(a, b) {
+  const wa = new Set(a.split(/\W+/).filter((w) => w.length > 4));
+  const wb = new Set(b.split(/\W+/).filter((w) => w.length > 4));
+  if (!wa.size || !wb.size) return 0;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  return shared / Math.min(wa.size, wb.size);
+}
+
+function orchRenderHealth() {
+  const h = orchHealth(orchState);
+  orchEl.healthVal.textContent = h.score;
+  orchEl.healthIssues.innerHTML = "";
+  for (const msg of h.issues) {
+    const li = document.createElement("li");
+    li.textContent = msg;
+    orchEl.healthIssues.appendChild(li);
+  }
+  if (!h.issues.length) {
+    const li = document.createElement("li");
+    li.className = "ok";
+    li.textContent = "no anti-patterns detected";
+    orchEl.healthIssues.appendChild(li);
+  }
+  const best = Number(localStorage.getItem(ORCH_CFG.bestKey) || 0);
+  if (h.score > best && h.score >= 60) {
+    localStorage.setItem(ORCH_CFG.bestKey, String(h.score));
+    showToast("🎼 New orchestra health best!");
+  }
+}
+
+// ---- copy / share ----
+orchEl.copy?.addEventListener("click", () => copyText(orchEl.preview.textContent || "", orchEl.copy));
+orchEl.copyJson?.addEventListener("click", () => copyText(JSON.stringify(orchState, null, 2), orchEl.copyJson));
+
+orchEl.fmtTabs.forEach((t) => t.addEventListener("click", () => orchSetFormat(t.dataset.fmt)));
+
+orchEl.shareBtn?.addEventListener("click", async () => {
+  if (!orchAnyContent()) { showToast("Fill at least one agent first."); return; }
+  const encoded = encodeState(orchState);
+  const url = `${location.origin}${location.pathname}#o=${encoded}`;
+  if (url.length > 2000) showToast("⚠ URL is very long (" + url.length + " chars)");
+  try {
+    await navigator.clipboard.writeText(url);
+    flashBtn(orchEl.shareBtn, "Link copied ✓");
+  } catch { prompt("Copy this URL:", url); }
+});
+
+orchEl.newBtn?.addEventListener("click", () => {
+  if (orchAnyContent() && !confirm("Clear this orchestra? Save a draft first if you want to keep it.")) return;
+  orchState = ORCH_PATTERNS["orchestrator-worker"].seed();
+  // Strip content so it's truly blank — keep the structure.
+  orchState.agents.forEach((a) => { for (const s of ORCH_AGENT_SLOTS) a.slots[s] = ""; });
+  orchState.coordination.terminationRule = "";
+  orchPersist();
+  orchRenderAll();
+});
+
+// ---- drafts ----
+function orchLoadDrafts() { try { return JSON.parse(localStorage.getItem(ORCH_CFG.draftsKey) || "[]"); } catch { return []; } }
+function orchSaveDrafts(l) { localStorage.setItem(ORCH_CFG.draftsKey, JSON.stringify(l)); }
+
+orchEl.saveBtn?.addEventListener("click", () => {
+  if (!orchAnyContent()) return;
+  const list = orchLoadDrafts();
+  const lead = orchState.agents.find((a) => a.kind === "orchestrator");
+  const snippet = ((lead && (lead.slots.goal || lead.slots.role)) || orchState.pattern).slice(0, 60);
+  list.unshift({ ts: Date.now(), goalSnippet: `[${orchState.pattern}] ${snippet}`, state: orchState });
+  list.splice(ORCH_CFG.maxDrafts);
+  orchSaveDrafts(list);
+  orchRenderDrafts();
+  flashBtn(orchEl.saveBtn, "Saved ✓");
+});
+
+function orchRenderDrafts() {
+  const list = orchLoadDrafts();
+  if (!list.length) { orchEl.draftsCard.hidden = true; return; }
+  orchEl.draftsCard.hidden = false;
+  orchEl.draftsList.innerHTML = "";
+  for (const d of list) {
+    const li = document.createElement("li");
+    li.className = "draft-item";
+    li.innerHTML = `<button class="draft-load" type="button" title="Load this orchestra"><span class="draft-when"></span><span class="draft-snippet"></span></button><button class="draft-del" type="button" aria-label="Delete draft">✕</button>`;
+    li.querySelector(".draft-when").textContent = relTime(d.ts);
+    li.querySelector(".draft-snippet").textContent = d.goalSnippet;
+    li.querySelector(".draft-load").addEventListener("click", () => {
+      orchState = d.state;
+      orchRenderAll();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    li.querySelector(".draft-del").addEventListener("click", () => { orchSaveDrafts(orchLoadDrafts().filter((x) => x.ts !== d.ts)); orchRenderDrafts(); });
+    orchEl.draftsList.appendChild(li);
+  }
+}
+
+orchEl.clearDrafts?.addEventListener("click", () => {
+  if (!confirm("Delete all saved orchestra drafts?")) return;
+  localStorage.removeItem(ORCH_CFG.draftsKey);
+  orchRenderDrafts();
+});
+
+// ---- templates + archaeology ----
+function orchRenderTemplates() {
+  orchEl.templatesList.innerHTML = "";
+  for (const [id, t] of Object.entries(ORCH_TEMPLATES)) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "template-card";
+    btn.innerHTML = `<span class="template-title"></span><span class="template-blurb"></span>`;
+    btn.querySelector(".template-title").textContent = t.title;
+    btn.querySelector(".template-blurb").textContent = t.blurb;
+    btn.addEventListener("click", () => {
+      if (orchAnyContent() && !confirm(`Load "${t.title}"? Current orchestra will be replaced.`)) return;
+      orchState = t.state();
+      orchRenderAll();
+      showToast(`Loaded: ${t.title}`);
+    });
+    orchEl.templatesList.appendChild(btn);
+  }
+}
+
+function orchRenderArchaeology() {
+  orchEl.archaeologyList.innerHTML = "";
+  for (const [id, a] of Object.entries(ORCH_ARCHAEOLOGY)) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "template-card";
+    btn.innerHTML = `<span class="template-title"></span><span class="template-blurb"></span><span class="template-source"></span>`;
+    btn.querySelector(".template-title").textContent = a.title;
+    btn.querySelector(".template-blurb").textContent = a.blurb;
+    btn.querySelector(".template-source").textContent = a.source;
+    btn.addEventListener("click", () => {
+      if (orchAnyContent() && !confirm(`Load "${a.title}"? Current orchestra will be replaced.`)) return;
+      orchState = a.state();
+      orchRenderAll();
+      showToast(`Loaded: ${a.title}`);
+    });
+    orchEl.archaeologyList.appendChild(btn);
+  }
+}
+
+// ---- mode toggle ----
+function orchSetMode(mode) {
+  localStorage.setItem(ORCH_CFG.modeKey, mode);
+  orchEl.modeTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.mode === mode));
+  const isOrch = mode === "orchestra";
+  orchEl.classicView.hidden = isOrch;
+  orchEl.view.hidden = !isOrch;
+  // Hide the slot meter / repurpose the score chip when in orchestra mode.
+  if (orchEl.slotMeter) orchEl.slotMeter.style.visibility = isOrch ? "hidden" : "";
+  if (orchEl.scoreLabel) orchEl.scoreLabel.textContent = isOrch ? "Orchestra" : "Composition";
+  if (isOrch) {
+    el.scoreVal.textContent = orchHealth(orchState).score;
+    orchRenderPreview(); // recompute and refresh hero score
+    // mirror hero score with orchestra health
+    el.scoreVal.textContent = orchHealth(orchState).score;
+  } else {
+    updatePreview();
+  }
+}
+
+orchEl.modeTabs.forEach((t) => t.addEventListener("click", () => orchSetMode(t.dataset.mode)));
+
+// Mirror the orchestra health to the hero score chip whenever we render.
+const _origRenderHealth = orchRenderHealth;
+orchRenderHealth = function () {
+  _origRenderHealth();
+  const mode = localStorage.getItem(ORCH_CFG.modeKey) || "single";
+  if (mode === "orchestra") el.scoreVal.textContent = orchHealth(orchState).score;
+};
+
+function orchRenderAll() {
+  orchRenderPatternPicker();
+  orchRenderActivePattern();
+  orchRenderAgents();
+  orchRenderCoordination();
+  orchRenderPreview();
+  orchPersist();
+}
+
+// ---- share-link hash load (#o=) ----
+function orchLoadFromHash() {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#o=")) return false;
+  const s = decodeState(hash.slice(3));
+  if (!s || !s.pattern || !Array.isArray(s.agents)) return false;
+  orchState = s;
+  history.replaceState(null, "", location.pathname);
+  showToast("Loaded shared orchestra");
+  return true;
+}
+
+// ---- init orchestra ----
+orchSetFormat(orchGetFormat());
+const orchFromHash = orchLoadFromHash();
+if (!orchFromHash) orchRestore();
+orchRenderTemplates();
+orchRenderArchaeology();
+orchRenderAll();
+orchRenderDrafts();
+
+// Restore previously selected mode (default: single)
+const savedMode = localStorage.getItem(ORCH_CFG.modeKey) || "single";
+orchSetMode(savedMode);
+// If we loaded an orchestra from a #o= hash, force-switch into orchestra mode.
+if (orchFromHash) orchSetMode("orchestra");
+
