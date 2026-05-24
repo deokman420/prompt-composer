@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
 
@@ -443,8 +443,9 @@
           <li><a href="#help-foundations">§1 — Foundations: why structure beats prose</a></li>
           <li><a href="#help-single">§2 — Single-prompt techniques (11)</a></li>
           <li><a href="#help-orchestra">§3 — Agent orchestration patterns (7)</a></li>
-          <li><a href="#help-escalate">§4 — When to escalate single → orchestra</a></li>
-          <li><a href="#help-sources">§5 — Sources</a></li>
+          <li><a href="#help-code">§4 — Prompts as code: the system / user split</a></li>
+          <li><a href="#help-escalate">§5 — When to escalate single → orchestra</a></li>
+          <li><a href="#help-sources">§6 — Sources</a></li>
         </ol>
       </details>
     </section>
@@ -606,7 +607,7 @@ entities, remove filler. Output all 5 versions as a JSON list.</pre>
             <span class="help-cite">OpenAI · 2024</span>
           </header>
           <p>Constrains decoding so the response is guaranteed to be valid JSON matching a supplied JSON Schema. OpenAI's Structured Outputs feature enforces adherence at the decoding layer — not by prompt instruction — trading some flexibility (schema specified up front, some JSON Schema features unsupported) for reliable parsing.</p>
-          <p class="help-when"><strong>When to use:</strong> Any downstream code path that needs to <code>JSON.parse</code> the response or hand it to a typed function — extraction, classification with metadata, tool-call arguments.</p>
+          <p class="help-when"><strong>When to use:</strong> Any downstream code path that needs to <code>JSON.parse</code> the response or hand it to a typed function — extraction, classification with metadata, tool-call arguments. <strong>Load-bearing for multi-agent</strong>: any pattern whose orchestrator parses a worker's reply needs this, or production will break on the first non-JSON answer (<a href="#help-orchestra">§3</a>).</p>
           <pre class="help-example">response_format = { "type": "json_schema",
   "json_schema": { "name": "Ticket", "strict": true,
     "schema": { "type": "object",
@@ -653,7 +654,14 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> A central LLM (orchestrator) inspects the task, dynamically decomposes it into subtasks, and dispatches each to a worker LLM with its own context window. Workers return structured results that the orchestrator synthesizes. The orchestrator decides when the result satisfies the brief.</p>
           <p class="help-when"><strong>When to use:</strong> Subtasks cannot be enumerated up front — e.g. a research question whose sub-queries depend on what the first searches return.</p>
           <p class="help-fail"><strong>Failure mode:</strong> The orchestrator over-spawns redundant workers (or workers duplicate work) because there is no shared scratchpad, inflating token cost without adding coverage.</p>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+          <div class="help-tip">
+            <span class="help-tip-label">Coordination prompt — decomposition</span>
+            <pre class="help-example">Decompose into independent subtasks. Pick a worker for each from:
+RESEARCHER, WRITER, REVIEWER.
+Respond ONLY as JSON: [{"worker": "&lt;name&gt;", "brief": "&lt;text&gt;"}].</pre>
+            <span class="help-tip-foot">Pair with <a href="#help-single">schema-constrained generation</a> in production — <code>json.loads</code> on a free-form LLM response is a flaky bug magnet.</span>
+          </div>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">picker name: orchestrator-worker</span></p>
         </article>
 
         <article class="help-card">
@@ -664,7 +672,7 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> A fixed DAG where each step is an LLM call whose input is the previous step's output, often with deterministic gates (validators, parsers, regex) between steps that can short-circuit the chain. Ends when the last node returns; no agent decides to stop.</p>
           <p class="help-when"><strong>When to use:</strong> The task decomposes cleanly into a known sequence of subtasks and you'll trade latency for higher per-step accuracy.</p>
           <p class="help-fail"><strong>Failure mode:</strong> An error in an early step (hallucinated entity, malformed outline) propagates and is amplified by every downstream step — no node ever revisits earlier output.</p>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">picker name: sequential</span></p>
         </article>
 
         <article class="help-card">
@@ -675,7 +683,7 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> A coordinator emits N independent calls (sectioning over different inputs, or voting over the same input) that execute concurrently; a reducer aggregates by concatenation, majority vote, or a final synthesizer LLM. Termination: once all branches return, the reducer fires.</p>
           <p class="help-when"><strong>When to use:</strong> Unit count is known or computable from state (summarize each of 40 docs, screen a prompt with K guardrail checks) and units are independent.</p>
           <p class="help-fail"><strong>Failure mode:</strong> Branches that should share context (cross-document deduplication) can't see each other, so the reducer inherits inconsistencies no single branch could detect.</p>
-          <p class="help-source"><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph — graph API (Send / map-reduce) ↗</a></p>
+          <p class="help-source"><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph — graph API (Send / map-reduce) ↗</a> · <span class="help-card-alt">picker name: parallel</span></p>
         </article>
 
         <article class="help-card">
@@ -686,7 +694,20 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> Two or more LLM instances generate independent answers to the same prompt, then over R rounds each agent reads the others' previous-round responses and updates its own. Final answers are aggregated by majority vote or a consensus pass — no external judge required.</p>
           <p class="help-when"><strong>When to use:</strong> Factual or reasoning tasks where a single chain-of-thought is unreliable and exposure to a peer's counter-argument empirically pulls answers toward truth (math word problems, factual QA).</p>
           <p class="help-fail"><strong>Failure mode:</strong> Confidently-wrong agents anchor the group. In long debates, models converge on a shared <em>incorrect</em> answer — more rounds make accuracy worse, not better.</p>
-          <p class="help-source"><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Improving Factuality through Multiagent Debate ↗</a></p>
+          <div class="help-tip">
+            <span class="help-tip-label">Coordination prompt — per round</span>
+            <pre class="help-example">Task: {task}
+
+Peer answers:
+# AgentA
+{peer_a_answer}
+# AgentB
+{peer_b_answer}
+
+Update your answer in light of the peers.</pre>
+            <span class="help-tip-foot">Cap rounds at 2–3. Past that, accuracy regresses (groupthink).</span>
+          </div>
+          <p class="help-source"><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Improving Factuality through Multiagent Debate ↗</a> · <span class="help-card-alt">picker name: group-chat</span></p>
         </article>
 
         <article class="help-card">
@@ -697,7 +718,7 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> A generator LLM produces a candidate; a separate evaluator LLM (or rubric-prompted call) scores it against explicit criteria and returns feedback; the generator regenerates conditioned on that feedback. Loop ends when the evaluator returns "accept" or a max-iteration cap is hit.</p>
           <p class="help-when"><strong>When to use:</strong> You can articulate evaluation criteria clearly enough that the evaluator's feedback measurably improves the next draft — literary translation, code that must pass a stated spec.</p>
           <p class="help-fail"><strong>Failure mode:</strong> Evaluator and generator collude on a shared blind spot (both miss the same class of error), so the loop terminates at a confident but wrong "accept."</p>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a></p>
+          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">not in the picker — implement with prompt chaining</span></p>
         </article>
 
         <article class="help-card">
@@ -708,7 +729,15 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> A tree where a top-level supervisor routes work to mid-level supervisors, each routing to its own worker pool; control returns up the tree via explicit handoff tools. The top-level supervisor emits the final answer by routing to a <code>FINISH</code> sentinel. Each supervisor sees only its own team's traffic.</p>
           <p class="help-when"><strong>When to use:</strong> Enough specialized teams (research, writing, ops) that giving one supervisor direct access to every worker would blow its context budget and degrade routing.</p>
           <p class="help-fail"><strong>Failure mode:</strong> Information needed across teams (a constraint research discovered) gets compressed into the inter-supervisor handoff and is lost before reaching the team that needed it.</p>
-          <p class="help-source"><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">langgraph-supervisor-py ↗</a></p>
+          <div class="help-tip">
+            <span class="help-tip-label">Coordination prompt — routing</span>
+            <pre class="help-example">User input: {input}
+
+Route to ONE of: BILLING, SUPPORT, ENGINEERING.
+Respond with just the route name.</pre>
+            <span class="help-tip-foot">Keep the response space tiny so a string-equality check works. Richer dispatch (parallel, conditional fan-out) is orchestrator-worker territory.</span>
+          </div>
+          <p class="help-source"><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">langgraph-supervisor-py ↗</a> · <span class="help-card-alt">picker name: handoff</span></p>
         </article>
 
         <article class="help-card">
@@ -719,15 +748,59 @@ call_3: write report using verdicts.json</pre>
           <p><strong>Shape:</strong> One agent attempts the task, receives an external feedback signal (test, tool error, reward, or self-generated critique), writes a short verbal reflection on what went wrong, stores it in an episodic memory buffer, and re-attempts with the reflection prepended. Ends on success or trial-count exhaustion.</p>
           <p class="help-when"><strong>When to use:</strong> Tasks with a cheap, reliable success signal per attempt (unit tests, environment reward, retrieval verification) where the same model can plausibly fix its own mistake once it is named.</p>
           <p class="help-fail"><strong>Failure mode:</strong> Without a grounded external signal, self-critique is no more reliable than the original answer — the agent rationalizes the wrong answer or flips a correct one under self-doubt.</p>
-          <p class="help-source"><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Reflexion: Verbal Reinforcement Learning ↗</a></p>
+          <p class="help-source"><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Reflexion: Verbal Reinforcement Learning ↗</a> · <span class="help-card-alt">not in the picker — implement with prompt chaining</span></p>
         </article>
 
       </div>
     </section>
 
-    <!-- §4 Escalation checklist -->
+    <!-- §4 Prompts as code -->
+    <section class="help-section" id="help-code">
+      <div class="band-label">§4 · prompts as code</div>
+      <h3 class="help-h3">The system / user message split</h3>
+      <p class="help-section-blurb">
+        Pasting a prompt into a chat window is one thing. Sending it through an SDK is another —
+        and the decision that dominates is which slots become the <strong>system</strong> parameter and which become the <strong>user</strong> message.
+        Get it wrong and your role bleeds into the input, or every call re-pays the framing cost.
+      </p>
+
+      <div class="help-cards">
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>One-shot prompt</h4>
+            <span class="help-cite">single artifact</span>
+          </header>
+          <p>Everything (Role + Goal + Context + Bounds + Task + Success) goes into the <strong>user message</strong>. The model gets one big instruction and responds once. Simple, portable, and the natural shape when you're pasting the result somewhere or running a single call.</p>
+          <p class="help-when"><strong>When to use:</strong> ad-hoc analyses, one-time generations, anywhere "the prompt" and "the call" are the same artifact.</p>
+          <p class="help-when"><strong>Trade-off:</strong> every call re-pays the framing tokens. No prompt-cache benefit on providers that have one.</p>
+          <p class="help-source">Composer's <strong>Single mode</strong> export does exactly this — try it: switch to Single, fill any frame, then Export as Python.</p>
+        </article>
+
+        <article class="help-card">
+          <header class="help-card-head">
+            <h4>Persistent agent</h4>
+            <span class="help-cite">stable role · variable input</span>
+          </header>
+          <p>Role and stable framing → <strong>system prompt</strong>. The dynamic per-call input → <strong>user message</strong>. Each agent's identity is fixed; only what it's being asked to do this turn changes. This is the right shape for any system that calls the same agent more than once.</p>
+          <p class="help-when"><strong>When to use:</strong> multi-agent orchestras, chat assistants, anything where the role outlives a single call.</p>
+          <p class="help-when"><strong>Trade-off:</strong> needs a coordination layer to decide what user-message each call gets. More moving parts than a one-shot.</p>
+          <p class="help-source">Composer's <strong>Agent orchestra</strong> export does this — each agent becomes a <code>*_SYSTEM</code> constant; the coordination loop feeds the user messages.</p>
+        </article>
+      </div>
+
+      <h4 class="help-sources-h4">Provider quirks worth knowing</h4>
+      <ul class="help-checklist">
+        <li><strong>Anthropic (Claude SDK · Bedrock · Vertex):</strong> dedicated <code>system</code> parameter, sibling to <code>messages</code>. System content is <em>not</em> a message.</li>
+        <li><strong>OpenAI:</strong> system is a message with <code>role: "system"</code>, conventionally first in the <code>messages</code> array.</li>
+        <li><strong>Gemini (google-genai):</strong> system goes into <code>config.system_instruction</code> (Python) / <code>config.systemInstruction</code> (TS) — <em>not</em> inside <code>contents</code>.</li>
+      </ul>
+
+      <p class="help-counter"><strong>Failure mode:</strong> dumping a role-laden prompt into the user message of a persistent-agent setup. The model treats your role description as a one-time instruction; subsequent turns drift back to default behavior. If the role matters across calls, it belongs in the system slot.</p>
+    </section>
+
+    <!-- §5 Escalation checklist -->
     <section class="help-section" id="help-escalate">
-      <div class="band-label">§4 · escalation</div>
+      <div class="band-label">§5 · escalation</div>
       <h3 class="help-h3">When to escalate single → orchestra</h3>
       <p class="help-section-blurb">
         Multi-agent systems are not a default upgrade. Anthropic's multi-agent research write-up measured
@@ -745,6 +818,14 @@ call_3: write report using verdicts.json</pre>
       </ul>
 
       <p class="help-counter"><strong>Counter-indicators (stay single-prompt):</strong> the task requires all agents to share the same evolving context, depends on tight real-time coordination, or the per-call latency budget is small.</p>
+
+      <h4 class="help-sources-h4">Right-size your workers</h4>
+      <p>The 15× isn't a fixed cost — it's a budget you can allocate. Two practical levers:</p>
+      <ul class="help-checklist">
+        <li><strong>Strongest model on the decision points</strong> — orchestrator, evaluator, supervisor. These calls are few but expensive to get wrong; a bad decomposition cascades into wasted worker calls.</li>
+        <li><strong>Cheapest viable model on the workers</strong> — parallel research, summarization, formatting. These calls are many; a 10× cheaper model that's 95% as good is the right tradeoff.</li>
+      </ul>
+      <p>Concretely: a frontier reasoning model on the orchestrator, a small/fast model on the workers. Composer's Orchestra export emits one model per call site, so a real production rig runs them on separate models.</p>
 
       <blockquote class="help-quote">
         Agents typically use about 4× more tokens than chat interactions, and multi-agent systems use about 15× more tokens than chats.
@@ -769,9 +850,9 @@ call_3: write report using verdicts.json</pre>
       </p>
     </section>
 
-    <!-- §5 Sources -->
+    <!-- §6 Sources -->
     <section class="help-section" id="help-sources">
-      <div class="band-label">§5 · sources</div>
+      <div class="band-label">§6 · sources</div>
       <h3 class="help-h3">Every URL cited above</h3>
       <p class="help-section-blurb">All links fetched live during research. If a link rots, the citation (author · year · title) is enough to find a current mirror.</p>
 
@@ -796,6 +877,13 @@ call_3: write report using verdicts.json</pre>
         <li><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Du et al., 2023 — Improving Factuality through Multiagent Debate</a></li>
         <li><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph docs — Use the graph API (Send / map-reduce)</a></li>
         <li><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">LangChain — langgraph-supervisor-py (hierarchical / supervisor)</a></li>
+      </ul>
+
+      <h4 class="help-sources-h4">Provider SDK references (§4)</h4>
+      <ul class="help-sources-list">
+        <li><a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noopener">Anthropic Messages API — <code>system</code> parameter</a></li>
+        <li><a href="https://platform.openai.com/docs/api-reference/chat" target="_blank" rel="noopener">OpenAI Chat Completions — <code>role: "system"</code> message</a></li>
+        <li><a href="https://ai.google.dev/gemini-api/docs/text-generation" target="_blank" rel="noopener">Google Gemini — <code>system_instruction</code> on GenerateContentConfig</a></li>
       </ul>
 
       <p class="help-foot">
@@ -830,7 +918,7 @@ call_3: write report using verdicts.json</pre>
     </div>
   </footer>
 
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>

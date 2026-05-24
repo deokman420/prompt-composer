@@ -1553,3 +1553,42 @@ button { font: inherit; color: inherit; }
   .preview-meta-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .preview-meta-field { flex: 1 1 auto; }
 }
+
+/* ============== HELP — coordination-prompt sub-tip (v14) ============== */
+.help-tip {
+  margin: 6px 0 2px;
+  padding: 10px 12px 8px;
+  background: var(--bg);
+  border: 1px dashed var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.help-tip-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.help-tip .help-example {
+  margin: 0;
+  font-size: 11.5px;
+}
+.help-tip-foot {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.help-tip-foot a { color: var(--accent); }
+.help-tip-foot code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--accent);
+}
