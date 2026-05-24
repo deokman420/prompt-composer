@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
 
@@ -370,11 +370,38 @@
           <span id="orchHealthVal" class="score-val">0</span>
           <ul id="orchHealthIssues" class="orch-health-issues"></ul>
         </div>
-        <div class="fmt-toggle" role="tablist" aria-label="Output format">
-          <button class="fmt-tab is-active orch-fmt-tab" type="button" role="tab" data-fmt="markdown">Markdown</button>
-          <button class="fmt-tab orch-fmt-tab" type="button" role="tab" data-fmt="xml">XML</button>
+        <div class="preview-meta-row">
+          <label class="preview-meta-field">
+            <span class="preview-meta-label">Export as</span>
+            <select id="orchFmtSelect" class="fmt-select" aria-label="Output format">
+              <optgroup label="Prompt bundle">
+                <option value="markdown">Markdown</option>
+                <option value="xml">XML</option>
+              </optgroup>
+              <optgroup label="Anthropic (Claude)">
+                <option value="anthropic-python">Python SDK</option>
+                <option value="anthropic-ts">TypeScript SDK</option>
+                <option value="bedrock-python">AWS Bedrock · Python</option>
+                <option value="bedrock-ts">AWS Bedrock · TypeScript</option>
+                <option value="vertex-python">Vertex AI · Python</option>
+                <option value="vertex-ts">Vertex AI · TypeScript</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai-python">Python SDK</option>
+                <option value="openai-ts">TypeScript SDK</option>
+              </optgroup>
+              <optgroup label="Google Gemini">
+                <option value="gemini-python">Python SDK</option>
+                <option value="gemini-ts">TypeScript SDK</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="preview-meta-field">
+            <span class="preview-meta-label">Model</span>
+            <select id="orchModelSelect" class="model-select" aria-label="Target model" hidden></select>
+          </label>
         </div>
-        <p class="fmt-caption">Bundle contains: orchestrator system prompt · each worker system prompt · coordination protocol. Paste each block into the matching agent role in your framework (CrewAI, AutoGen, LangGraph, n8n, raw API).</p>
+        <p id="orchFmtCaption" class="fmt-caption">Bundle contains: orchestrator system prompt · each worker system prompt · coordination protocol. Paste each block into the matching agent role in your framework (CrewAI, AutoGen, LangGraph, n8n, raw API).</p>
         <pre id="orchPreview" class="preview-text" aria-live="polite"></pre>
         <div class="preview-actions">
           <button id="orchCopyBtn" class="copy-btn primary" type="button">Copy bundle</button>
@@ -803,7 +830,7 @@ call_3: write report using verdicts.json</pre>
     </div>
   </footer>
 
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>

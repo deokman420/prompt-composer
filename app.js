@@ -2003,7 +2003,9 @@ const orchEl = {
   tokenEst: document.getElementById("orchTokenEst"),
   healthVal: document.getElementById("orchHealthVal"),
   healthIssues: document.getElementById("orchHealthIssues"),
-  fmtTabs: document.querySelectorAll(".orch-fmt-tab"),
+  fmtSelect: document.getElementById("orchFmtSelect"),
+  modelSelect: document.getElementById("orchModelSelect"),
+  fmtCaption: document.getElementById("orchFmtCaption"),
   copy: document.getElementById("orchCopyBtn"),
   copyJson: document.getElementById("orchCopyJsonBtn"),
   newBtn: document.getElementById("orchNewBtn"),
@@ -2022,12 +2024,23 @@ const orchEl = {
 let orchState = ORCH_PATTERNS["orchestrator-worker"].seed();
 
 function orchGetFormat() {
-  return localStorage.getItem(ORCH_CFG.formatKey) === "xml" ? "xml" : "markdown";
+  const saved = localStorage.getItem(ORCH_CFG.formatKey);
+  return (typeof ORCH_TARGETS !== "undefined" && ORCH_TARGETS[saved]) ? saved : (saved === "xml" ? "xml" : "markdown");
 }
 function orchSetFormat(fmt) {
+  if (typeof ORCH_TARGETS !== "undefined" && !ORCH_TARGETS[fmt]) fmt = "markdown";
   localStorage.setItem(ORCH_CFG.formatKey, fmt);
-  orchEl.fmtTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.fmt === fmt));
-  orchEl.copy.textContent = fmt === "xml" ? "Copy bundle (XML)" : "Copy bundle (Markdown)";
+  if (orchEl.fmtSelect) orchEl.fmtSelect.value = fmt;
+  const target = (typeof ORCH_TARGETS !== "undefined") ? ORCH_TARGETS[fmt] : null;
+  if (target?.kind === "code") {
+    orchEl.copy.textContent = `Copy ${target.label.split("·").pop().trim()}`;
+    if (orchEl.fmtCaption) orchEl.fmtCaption.textContent =
+      `Runnable ${target.label} for pattern: ${orchState.pattern}. Adapter (call_agent) + agent system-prompt constants + coordination loop. Edit before running.`;
+  } else {
+    orchEl.copy.textContent = fmt === "xml" ? "Copy bundle (XML)" : "Copy bundle (Markdown)";
+    if (orchEl.fmtCaption && target) orchEl.fmtCaption.textContent = target.caption;
+  }
+  if (typeof orchPopulateModelSelect === "function") orchPopulateModelSelect();
   orchRenderPreview();
 }
 
@@ -2237,9 +2250,575 @@ function escXml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function orchRenderPreview() {
+// ============================================================
+// ORCHESTRA CODE EXPORT
+// ============================================================
+// Generates runnable multi-agent Python or TypeScript code for the
+// active pattern, using the agents' composed system prompts and a
+// thin `call_agent(system, user)` SDK adapter. Same 5 patterns the
+// UI exposes (orchestrator-worker, sequential, parallel, group-chat,
+// handoff); each pattern has a Python coordinator and a TS coordinator
+// that work against the adapter's callAgent helper.
+
+// ----- agent-prompt composition -----
+function orchAgentSystemPrompt(agent) {
+  const lines = [];
+  for (const slot of ORCH_AGENT_SLOTS) {
+    const v = (agent.slots[slot] || "").trim();
+    if (!v) continue;
+    lines.push(`## ${slot.toUpperCase()}\n${v}`);
+  }
+  return lines.join("\n\n") || `(empty system prompt for ${agent.name || agent.kind})`;
+}
+function orchConstName(agent, idx) {
+  const base = (agent.name || `${agent.kind}_${idx}`).replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return (base.toUpperCase() || `AGENT_${idx}`) + "_SYSTEM";
+}
+function orchAgentsByKind(state) {
+  const orch = state.agents.find((a) => a.kind === "orchestrator") || state.agents[0];
+  const workers = state.agents.filter((a) => a !== orch);
+  return { orch, workers };
+}
+function orchRenderAgentConsts(lang, state) {
+  const parts = [];
+  state.agents.forEach((agent, i) => {
+    const name = orchConstName(agent, i);
+    const prompt = orchAgentSystemPrompt(agent);
+    if (lang === "python") parts.push(`${name} = ${pyTripleString(prompt)}`);
+    else parts.push(`const ${name} = ${tsBacktickString(prompt)};`);
+  });
+  return parts.join("\n\n");
+}
+
+// ----- SDK adapters (provide call_agent / callAgent + client init) -----
+function orchAdapterAnthropicPy(modelId) {
+  return `# pip install anthropic
+from concurrent.futures import ThreadPoolExecutor
+import json
+from anthropic import Anthropic
+
+client = Anthropic()  # reads ANTHROPIC_API_KEY from env
+
+def call_agent(system: str, user: str, model: str = "${modelId}") -> str:
+    m = client.messages.create(
+        model=model, max_tokens=1024, system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return m.content[0].text
+# Docs: https://docs.anthropic.com/en/api/messages`;
+}
+function orchAdapterAnthropicTs(modelId) {
+  return `// npm i @anthropic-ai/sdk
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+
+async function callAgent(system, user, model = "${modelId}") {
+  const m = await client.messages.create({
+    model, max_tokens: 1024, system,
+    messages: [{ role: "user", content: user }],
+  });
+  const b = m.content[0];
+  return b.type === "text" ? b.text : "";
+}
+// Docs: https://docs.anthropic.com/en/api/messages`;
+}
+function orchAdapterBedrockPy(modelId) {
+  return `# pip install boto3
+# Auth: standard AWS env vars / IAM role / ~/.aws/credentials
+from concurrent.futures import ThreadPoolExecutor
+import json, boto3
+
+bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+def call_agent(system: str, user: str, model: str = "${modelId}") -> str:
+    r = bedrock.converse(
+        modelId=model,
+        system=[{"text": system}],
+        messages=[{"role": "user", "content": [{"text": user}]}],
+        inferenceConfig={"maxTokens": 1024},
+    )
+    return r["output"]["message"]["content"][0]["text"]
+# Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html`;
+}
+function orchAdapterBedrockTs(modelId) {
+  return `// npm i @aws-sdk/client-bedrock-runtime
+// Auth: standard AWS env vars / IAM role / ~/.aws/credentials
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+
+const bedrock = new BedrockRuntimeClient({ region: "us-east-1" });
+
+async function callAgent(system, user, model = "${modelId}") {
+  const r = await bedrock.send(new ConverseCommand({
+    modelId: model,
+    system: [{ text: system }],
+    messages: [{ role: "user", content: [{ text: user }] }],
+    inferenceConfig: { maxTokens: 1024 },
+  }));
+  return r.output?.message?.content?.[0]?.text ?? "";
+}
+// Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html`;
+}
+function orchAdapterVertexPy(modelId) {
+  return `# pip install "anthropic[vertex]"
+# Auth: gcloud auth application-default login (or service account)
+from concurrent.futures import ThreadPoolExecutor
+import json
+from anthropic import AnthropicVertex
+
+client = AnthropicVertex(project_id="YOUR_GCP_PROJECT", region="us-east5")
+
+def call_agent(system: str, user: str, model: str = "${modelId}") -> str:
+    m = client.messages.create(
+        model=model, max_tokens=1024, system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return m.content[0].text
+# Docs: https://docs.anthropic.com/en/api/claude-on-vertex-ai`;
+}
+function orchAdapterVertexTs(modelId) {
+  return `// npm i @anthropic-ai/vertex-sdk
+// Auth: gcloud auth application-default login (or service account)
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
+
+const client = new AnthropicVertex({ projectId: "YOUR_GCP_PROJECT", region: "us-east5" });
+
+async function callAgent(system, user, model = "${modelId}") {
+  const m = await client.messages.create({
+    model, max_tokens: 1024, system,
+    messages: [{ role: "user", content: user }],
+  });
+  const b = m.content[0];
+  return b.type === "text" ? b.text : "";
+}
+// Docs: https://docs.anthropic.com/en/api/claude-on-vertex-ai`;
+}
+function orchAdapterOpenAIPy(modelId) {
+  return `# pip install openai
+from concurrent.futures import ThreadPoolExecutor
+import json
+from openai import OpenAI
+
+client = OpenAI()  # reads OPENAI_API_KEY from env
+# (works with OpenAI-compatible servers: OpenAI(base_url="http://localhost:11434/v1"))
+
+def call_agent(system: str, user: str, model: str = "${modelId}") -> str:
+    r = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ],
+    )
+    return r.choices[0].message.content
+# Docs: https://platform.openai.com/docs/api-reference/chat`;
+}
+function orchAdapterOpenAITs(modelId) {
+  return `// npm i openai
+import OpenAI from "openai";
+
+const client = new OpenAI(); // reads OPENAI_API_KEY from env
+
+async function callAgent(system, user, model = "${modelId}") {
+  const r = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user",   content: user   },
+    ],
+  });
+  return r.choices[0].message.content ?? "";
+}
+// Docs: https://platform.openai.com/docs/api-reference/chat`;
+}
+function orchAdapterGeminiPy(modelId) {
+  return `# pip install google-genai
+from concurrent.futures import ThreadPoolExecutor
+import json
+from google import genai
+from google.genai import types
+
+client = genai.Client()  # reads GEMINI_API_KEY from env
+
+def call_agent(system: str, user: str, model: str = "${modelId}") -> str:
+    r = client.models.generate_content(
+        model=model,
+        config=types.GenerateContentConfig(system_instruction=system),
+        contents=user,
+    )
+    return r.text or ""
+# Docs: https://ai.google.dev/gemini-api/docs/text-generation`;
+}
+function orchAdapterGeminiTs(modelId) {
+  return `// npm i @google/genai
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({}); // reads GEMINI_API_KEY from env
+
+async function callAgent(system, user, model = "${modelId}") {
+  const r = await ai.models.generateContent({
+    model,
+    config: { systemInstruction: system },
+    contents: user,
+  });
+  return r.text ?? "";
+}
+// Docs: https://ai.google.dev/gemini-api/docs/text-generation`;
+}
+
+// ----- pattern coordinators (Python) -----
+function orchPyWorkersDict(workers, indent) {
+  const pad = " ".repeat(indent);
+  const lines = workers.map((w, i) => `${pad}    ${pyDictKey(w.name || `worker_${i}`)}: ${orchConstName(w, w._idx ?? 1 + i)}`);
+  return `{\n${lines.join(",\n")},\n${pad}}`;
+}
+function pyDictKey(s) { return JSON.stringify(String(s)); }
+function orchTsWorkersObj(workers) {
+  const lines = workers.map((w, i) => `  ${JSON.stringify(w.name || `worker_${i}`)}: ${orchConstName(w, w._idx ?? 1 + i)}`);
+  return `{\n${lines.join(",\n")},\n}`;
+}
+
+function orchPyPatternOrchestratorWorker(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workersDict = orchPyWorkersDict(workers, 0);
+  return `# ===== pattern: orchestrator-worker =====
+WORKERS = ${workersDict}
+
+def main(user_task: str) -> str:
+    # 1) Orchestrator decomposes the task into per-worker briefs.
+    plan_prompt = (
+        "User task:\\n" + user_task +
+        "\\n\\nDecompose into independent subtasks. Pick a worker for each from: "
+        + ", ".join(WORKERS.keys()) +
+        ".\\nRespond ONLY as a JSON list: "
+        "[{\\"worker\\": <name>, \\"brief\\": <text>}]."
+    )
+    plan = json.loads(call_agent(${orchName}, plan_prompt))
+
+    # 2) Workers run in parallel; each gets its assigned brief.
+    def run(item):
+        sys = WORKERS.get(item["worker"]) or next(iter(WORKERS.values()))
+        return {"worker": item["worker"], "result": call_agent(sys, item["brief"])}
+    with ThreadPoolExecutor(max_workers=max(1, len(WORKERS))) as ex:
+        results = list(ex.map(run, plan))
+
+    # 3) Orchestrator reconciles into the final answer.
+    synth_prompt = (
+        "Worker results:\\n" + json.dumps(results, indent=2) +
+        "\\n\\nReconcile into a final answer, citing each claim to its worker."
+    )
+    return call_agent(${orchName}, synth_prompt)
+
+if __name__ == "__main__":
+    print(main("REPLACE_WITH_YOUR_TASK"))`;
+}
+function orchPyPatternSequential(state) {
+  state.agents.forEach((a, i) => (a._idx = i));
+  const ordered = state.agents;
+  const chain = ordered.map((a) => orchConstName(a, a._idx));
+  return `# ===== pattern: sequential pipeline =====
+PIPELINE = [${chain.join(", ")}]
+
+def main(user_input: str) -> str:
+    current = user_input
+    for system in PIPELINE:
+        current = call_agent(system, current)
+    return current
+
+if __name__ == "__main__":
+    print(main("REPLACE_WITH_YOUR_INPUT"))`;
+}
+function orchPyPatternParallel(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workerList = workers.map((w) => orchConstName(w, w._idx)).join(", ");
+  return `# ===== pattern: parallel fan-out (map-reduce) =====
+WORKERS = [${workerList}]
+
+def main(items: list[str]) -> str:
+    # 1) Map: each worker (or N copies of the same worker) tackles one item in parallel.
+    def run(pair):
+        idx, item = pair
+        return call_agent(WORKERS[idx % len(WORKERS)], item)
+    with ThreadPoolExecutor(max_workers=len(WORKERS)) as ex:
+        partials = list(ex.map(run, list(enumerate(items))))
+
+    # 2) Reduce: orchestrator aggregates the partials.
+    reduce_prompt = "Partial results:\\n" + json.dumps(partials, indent=2) + "\\n\\nAggregate into one answer."
+    return call_agent(${orchName}, reduce_prompt)
+
+if __name__ == "__main__":
+    print(main(["REPLACE_WITH", "YOUR_ITEMS"]))`;
+}
+function orchPyPatternGroupChat(state) {
+  state.agents.forEach((a, i) => (a._idx = i));
+  const agentList = state.agents.map((a) => `(${JSON.stringify(a.name)}, ${orchConstName(a, a._idx)})`).join(", ");
+  const rounds = Math.max(1, Number(state.coordination?.maxWorkers || 3));
+  return `# ===== pattern: group chat / debate =====
+AGENTS = [${agentList}]  # (name, system_prompt)
+ROUNDS = ${rounds}
+
+def main(task: str) -> str:
+    answers = {name: call_agent(sys, task) for name, sys in AGENTS}
+    for _ in range(ROUNDS):
+        new_answers = {}
+        for name, sys in AGENTS:
+            peer = "\\n\\n".join(f"# {n}\\n{a}" for n, a in answers.items() if n != name)
+            new_answers[name] = call_agent(
+                sys,
+                f"Task:\\n{task}\\n\\nPeer answers:\\n{peer}\\n\\nUpdate your answer in light of the peers.",
+            )
+        answers = new_answers
+    # Final aggregation: a quick consensus pass by the first agent.
+    consensus_prompt = "Final answers:\\n" + json.dumps(answers, indent=2) + "\\n\\nReconcile into a single best answer."
+    return call_agent(AGENTS[0][1], consensus_prompt)
+
+if __name__ == "__main__":
+    print(main("REPLACE_WITH_YOUR_TASK"))`;
+}
+function orchPyPatternHandoff(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workersDict = orchPyWorkersDict(workers, 0);
+  return `# ===== pattern: handoff / supervisor routing =====
+ROUTES = ${workersDict}
+
+def main(user_input: str) -> str:
+    # 1) Supervisor picks one route by name.
+    route_prompt = (
+        "User input:\\n" + user_input +
+        "\\n\\nRoute to ONE of: " + ", ".join(ROUTES.keys()) +
+        ".\\nRespond with just the route name."
+    )
+    chosen = call_agent(${orchName}, route_prompt).strip()
+    system = ROUTES.get(chosen) or next(iter(ROUTES.values()))
+
+    # 2) The chosen worker handles the input end-to-end.
+    return call_agent(system, user_input)
+
+if __name__ == "__main__":
+    print(main("REPLACE_WITH_YOUR_INPUT"))`;
+}
+
+// ----- pattern coordinators (TypeScript) -----
+function orchTsPatternOrchestratorWorker(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workersObj = orchTsWorkersObj(workers);
+  return `// ===== pattern: orchestrator-worker =====
+const WORKERS = ${workersObj};
+
+async function main(userTask) {
+  // 1) Orchestrator decomposes the task into per-worker briefs.
+  const planPrompt =
+    "User task:\\n" + userTask +
+    "\\n\\nDecompose into independent subtasks. Pick a worker for each from: " +
+    Object.keys(WORKERS).join(", ") +
+    ".\\nRespond ONLY as a JSON list: [{\\"worker\\": <name>, \\"brief\\": <text>}].";
+  const plan = JSON.parse(await callAgent(${orchName}, planPrompt));
+
+  // 2) Workers run in parallel; each gets its assigned brief.
+  const results = await Promise.all(plan.map(async (item) => {
+    const sys = WORKERS[item.worker] ?? Object.values(WORKERS)[0];
+    return { worker: item.worker, result: await callAgent(sys, item.brief) };
+  }));
+
+  // 3) Orchestrator reconciles into the final answer.
+  const synthPrompt =
+    "Worker results:\\n" + JSON.stringify(results, null, 2) +
+    "\\n\\nReconcile into a final answer, citing each claim to its worker.";
+  return await callAgent(${orchName}, synthPrompt);
+}
+
+console.log(await main("REPLACE_WITH_YOUR_TASK"));`;
+}
+function orchTsPatternSequential(state) {
+  state.agents.forEach((a, i) => (a._idx = i));
+  const chain = state.agents.map((a) => orchConstName(a, a._idx));
+  return `// ===== pattern: sequential pipeline =====
+const PIPELINE = [${chain.join(", ")}];
+
+async function main(userInput) {
+  let current = userInput;
+  for (const system of PIPELINE) current = await callAgent(system, current);
+  return current;
+}
+
+console.log(await main("REPLACE_WITH_YOUR_INPUT"));`;
+}
+function orchTsPatternParallel(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workerList = workers.map((w) => orchConstName(w, w._idx)).join(", ");
+  return `// ===== pattern: parallel fan-out (map-reduce) =====
+const WORKERS = [${workerList}];
+
+async function main(items) {
+  // 1) Map: each worker (or N copies of the same worker) tackles one item in parallel.
+  const partials = await Promise.all(items.map((item, i) =>
+    callAgent(WORKERS[i % WORKERS.length], item)
+  ));
+  // 2) Reduce: orchestrator aggregates the partials.
+  const reducePrompt =
+    "Partial results:\\n" + JSON.stringify(partials, null, 2) +
+    "\\n\\nAggregate into one answer.";
+  return await callAgent(${orchName}, reducePrompt);
+}
+
+console.log(await main(["REPLACE_WITH", "YOUR_ITEMS"]));`;
+}
+function orchTsPatternGroupChat(state) {
+  state.agents.forEach((a, i) => (a._idx = i));
+  const agentList = state.agents.map((a) => `[${JSON.stringify(a.name)}, ${orchConstName(a, a._idx)}]`).join(", ");
+  const rounds = Math.max(1, Number(state.coordination?.maxWorkers || 3));
+  return `// ===== pattern: group chat / debate =====
+const AGENTS = [${agentList}];  // [name, systemPrompt]
+const ROUNDS = ${rounds};
+
+async function main(task) {
+  let answers = Object.fromEntries(
+    await Promise.all(AGENTS.map(async ([name, sys]) => [name, await callAgent(sys, task)]))
+  );
+  for (let r = 0; r < ROUNDS; r++) {
+    answers = Object.fromEntries(
+      await Promise.all(AGENTS.map(async ([name, sys]) => {
+        const peer = Object.entries(answers)
+          .filter(([n]) => n !== name)
+          .map(([n, a]) => "# " + n + "\\n" + a)
+          .join("\\n\\n");
+        const updated = await callAgent(sys,
+          "Task:\\n" + task +
+          "\\n\\nPeer answers:\\n" + peer +
+          "\\n\\nUpdate your answer in light of the peers."
+        );
+        return [name, updated];
+      }))
+    );
+  }
+  const consensusPrompt =
+    "Final answers:\\n" + JSON.stringify(answers, null, 2) +
+    "\\n\\nReconcile into a single best answer.";
+  return await callAgent(AGENTS[0][1], consensusPrompt);
+}
+
+console.log(await main("REPLACE_WITH_YOUR_TASK"));`;
+}
+function orchTsPatternHandoff(state) {
+  const { orch, workers } = orchAgentsByKind(state);
+  state.agents.forEach((a, i) => (a._idx = i));
+  const orchName = orchConstName(orch, state.agents.indexOf(orch));
+  const workersObj = orchTsWorkersObj(workers);
+  return `// ===== pattern: handoff / supervisor routing =====
+const ROUTES = ${workersObj};
+
+async function main(userInput) {
+  // 1) Supervisor picks one route by name.
+  const routePrompt =
+    "User input:\\n" + userInput +
+    "\\n\\nRoute to ONE of: " + Object.keys(ROUTES).join(", ") +
+    ".\\nRespond with just the route name.";
+  const chosen = (await callAgent(${orchName}, routePrompt)).trim();
+  const system = ROUTES[chosen] ?? Object.values(ROUTES)[0];
+  // 2) The chosen worker handles the input end-to-end.
+  return await callAgent(system, userInput);
+}
+
+console.log(await main("REPLACE_WITH_YOUR_INPUT"));`;
+}
+
+const ORCH_PY_PATTERNS = {
+  "orchestrator-worker": orchPyPatternOrchestratorWorker,
+  "sequential":          orchPyPatternSequential,
+  "parallel":            orchPyPatternParallel,
+  "group-chat":          orchPyPatternGroupChat,
+  "handoff":             orchPyPatternHandoff,
+};
+const ORCH_TS_PATTERNS = {
+  "orchestrator-worker": orchTsPatternOrchestratorWorker,
+  "sequential":          orchTsPatternSequential,
+  "parallel":            orchTsPatternParallel,
+  "group-chat":          orchTsPatternGroupChat,
+  "handoff":             orchTsPatternHandoff,
+};
+
+const ORCH_TARGETS = {
+  "markdown": { kind: "prompt", label: "Markdown",  caption: "Bundle contains: orchestrator system prompt · each worker system prompt · coordination protocol. Paste each block into the matching agent role in your framework." },
+  "xml":      { kind: "prompt", label: "XML",       caption: "XML mirrors the Markdown bundle with explicit tags — recommended when piping into Claude with structured agent definitions." },
+  "anthropic-python": { kind: "code", provider: "anthropic", lang: "python", label: "Anthropic · Python SDK",   adapter: orchAdapterAnthropicPy },
+  "anthropic-ts":     { kind: "code", provider: "anthropic", lang: "ts",     label: "Anthropic · TypeScript",   adapter: orchAdapterAnthropicTs },
+  "bedrock-python":   { kind: "code", provider: "anthropic", lang: "python", label: "AWS Bedrock · Python",     adapter: orchAdapterBedrockPy },
+  "bedrock-ts":       { kind: "code", provider: "anthropic", lang: "ts",     label: "AWS Bedrock · TypeScript", adapter: orchAdapterBedrockTs },
+  "vertex-python":    { kind: "code", provider: "anthropic", lang: "python", label: "Vertex AI · Python",       adapter: orchAdapterVertexPy },
+  "vertex-ts":        { kind: "code", provider: "anthropic", lang: "ts",     label: "Vertex AI · TypeScript",   adapter: orchAdapterVertexTs },
+  "openai-python":    { kind: "code", provider: "openai",    lang: "python", label: "OpenAI · Python SDK",      adapter: orchAdapterOpenAIPy },
+  "openai-ts":        { kind: "code", provider: "openai",    lang: "ts",     label: "OpenAI · TypeScript",      adapter: orchAdapterOpenAITs },
+  "gemini-python":    { kind: "code", provider: "gemini",    lang: "python", label: "Gemini · Python SDK",      adapter: orchAdapterGeminiPy },
+  "gemini-ts":        { kind: "code", provider: "gemini",    lang: "ts",     label: "Gemini · TypeScript",      adapter: orchAdapterGeminiTs },
+};
+
+const ORCH_MODEL_KEY = "context.composer.orch.model.v1";
+
+function orchGetSelectedModel() {
+  const target = ORCH_TARGETS[orchGetFormat()];
+  const provider = target?.kind === "code" ? target.provider : "anthropic";
+  const saved = localStorage.getItem(ORCH_MODEL_KEY) || "";
+  const [savedProv, savedId] = saved.split(":");
+  if (savedProv === provider) {
+    const hit = findModel(provider, savedId);
+    if (hit) return hit;
+  }
+  return MODELS[provider][0];
+}
+function orchPopulateModelSelect() {
+  if (!orchEl.modelSelect) return;
+  const target = ORCH_TARGETS[orchGetFormat()];
+  if (!target || target.kind !== "code") { orchEl.modelSelect.hidden = true; return; }
+  const provider = target.provider;
+  const current = orchGetSelectedModel();
+  orchEl.modelSelect.innerHTML = "";
+  for (const m of MODELS[provider]) {
+    const opt = document.createElement("option");
+    opt.value = m.id; opt.textContent = m.label;
+    if (m.id === current.id) opt.selected = true;
+    orchEl.modelSelect.appendChild(opt);
+  }
+  orchEl.modelSelect.hidden = false;
+}
+function orchSetModel(modelId) {
+  const target = ORCH_TARGETS[orchGetFormat()];
+  if (!target || target.kind !== "code") return;
+  localStorage.setItem(ORCH_MODEL_KEY, `${target.provider}:${modelId}`);
+  orchRenderPreview();
+}
+
+function orchRenderCode(targetKey, state) {
+  const target = ORCH_TARGETS[targetKey];
+  const model = orchGetSelectedModel();
+  const modelId = resolveModelId(targetKey, model);
+  const adapter = target.adapter(modelId);
+  const consts = orchRenderAgentConsts(target.lang, state);
+  const patternTable = target.lang === "python" ? ORCH_PY_PATTERNS : ORCH_TS_PATTERNS;
+  const coordinator = (patternTable[state.pattern] || patternTable["orchestrator-worker"])(state);
+  return `${adapter}\n\n${consts}\n\n${coordinator}`;
+}
+
+function orchRenderCurrent(state) {
   const fmt = orchGetFormat();
-  const out = fmt === "xml" ? orchRenderBundleXml(orchState) : orchRenderBundleMd(orchState);
+  const target = ORCH_TARGETS[fmt];
+  if (!target || target.kind === "prompt") {
+    return fmt === "xml" ? orchRenderBundleXml(state) : orchRenderBundleMd(state);
+  }
+  return orchRenderCode(fmt, state);
+}
+
+function orchRenderPreview() {
+  const out = orchRenderCurrent(orchState);
   orchEl.preview.textContent = out;
   const tokens = Math.max(0, Math.round(out.length / 4));
   orchEl.tokenEst.innerHTML = `~${tokens} tokens <span class="token-est-suffix">· rough</span>`;
@@ -2351,7 +2930,8 @@ function orchRenderHealth() {
 orchEl.copy?.addEventListener("click", () => copyText(orchEl.preview.textContent || "", orchEl.copy));
 orchEl.copyJson?.addEventListener("click", () => copyText(JSON.stringify(orchState, null, 2), orchEl.copyJson));
 
-orchEl.fmtTabs.forEach((t) => t.addEventListener("click", () => orchSetFormat(t.dataset.fmt)));
+orchEl.fmtSelect?.addEventListener("change", (e) => orchSetFormat(e.target.value));
+orchEl.modelSelect?.addEventListener("change", (e) => orchSetModel(e.target.value));
 
 orchEl.shareBtn?.addEventListener("click", async () => {
   if (!orchAnyContent()) { showToast("Fill at least one agent first."); return; }
