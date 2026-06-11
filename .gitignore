@@ -2,3 +2,9 @@
 .DS_Store
 node_modules
 *.log
+
+# E2E + Lighthouse test harness — local-only, stays out of the repo
+package.json
+package-lock.json
+playwright.config.ts
+tests/

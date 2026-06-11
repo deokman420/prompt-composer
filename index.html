@@ -2,6 +2,26 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    // Signed-in Pro users belong in the app, not the free composer. We detect a
+    // session via two cross-subdomain signals on .phbeks.com:
+    //   ph_signed_in=1 — explicit JS-readable flag the Pro middleware sets/clears
+    //                    (reliable: set with domain=.phbeks.com, httpOnly:false).
+    //   __session      — Clerk's own cookie; a fallback in case the flag hasn't
+    //                    been written yet (e.g. a long-standing session).
+    // Runs first (before styles/fonts) to avoid a flash. Guarded to the live
+    // host so local/preview builds of this static page don't bounce. The app
+    // clears ph_signed_in on sign-out, so /compose won't loop a signed-out user.
+    (function () {
+      try {
+        if (location.hostname !== "prompt.phbeks.com") return;
+        var c = document.cookie;
+        if (/(?:^|;\s*)ph_signed_in=1(?:;|$)/.test(c) || /(?:^|;\s*)__session=/.test(c)) {
+          location.replace("https://app.prompt.phbeks.com/compose");
+        }
+      } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -22,10 +42,53 @@
   <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=14" />
+  <!-- Fonts load async (media=print → all on load) so the CSS fetch doesn't
+       block first paint; display=swap shows the fallback face meanwhile. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" /></noscript>
+  <link rel="stylesheet" href="style.css?v=18" />
 </head>
 <body>
+
+  <!-- ============== L1 TOP NAV (cross-domain parity) ============== -->
+  <header class="topnav" role="banner">
+    <div class="topnav-inner">
+      <button class="nav-burger" type="button" aria-label="Open menu" aria-expanded="false" id="navBurger"><span></span><span></span><span></span></button>
+      <a href="index.html" class="brand" aria-label="Prompt Composer home">
+        <span class="brand-prefix">ph &rsaquo;</span> <span class="brand-name">Composer</span>
+      </a>
+      <nav class="topnav-links" aria-label="Primary">
+        <button class="topnav-link mode-tab is-active" type="button" data-mode="single">Compose</button>
+        <button class="topnav-link mode-tab" type="button" data-mode="orchestra">Orchestra <span class="topnav-pill">Pro</span></button>
+        <button class="topnav-link mode-tab" type="button" data-mode="tools">Tools <span class="topnav-pill">Pro</span></button>
+        <button class="topnav-link mode-tab" type="button" data-mode="context">Context <span class="topnav-pill">Pro</span></button>
+        <button class="topnav-link mode-tab" type="button" data-mode="eval">Eval <span class="topnav-pill">Pro</span></button>
+        <button class="topnav-link mode-tab" type="button" data-mode="help">Help</button>
+        <a class="topnav-link" href="https://app.prompt.phbeks.com/pricing" rel="noopener">Pricing</a>
+      </nav>
+      <div class="topnav-right">
+        <a href="https://app.prompt.phbeks.com/sign-in" class="topnav-cta" rel="noopener">Sign in &rarr;</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============== MOBILE NAV DRAWER (≤720px) ============== -->
+  <div class="nav-overlay" id="navOverlay" aria-hidden="true"></div>
+  <aside class="nav-drawer" id="navDrawer" inert aria-label="Menu">
+    <div class="nav-drawer-head">
+      <span class="brand"><span class="brand-prefix">ph &rsaquo;</span> <span class="brand-name">Composer</span></span>
+      <button class="nav-drawer-close" type="button" aria-label="Close menu" id="navClose">&#10005;</button>
+    </div>
+    <nav class="nav-drawer-links" aria-label="Primary mobile">
+      <button class="topnav-link mode-tab" type="button" data-mode="single">Compose</button>
+      <button class="topnav-link mode-tab" type="button" data-mode="orchestra">Orchestra <span class="topnav-pill">Pro</span></button>
+      <button class="topnav-link mode-tab" type="button" data-mode="tools">Tools <span class="topnav-pill">Pro</span></button>
+      <button class="topnav-link mode-tab" type="button" data-mode="context">Context <span class="topnav-pill">Pro</span></button>
+      <button class="topnav-link mode-tab" type="button" data-mode="eval">Eval <span class="topnav-pill">Pro</span></button>
+      <button class="topnav-link mode-tab" type="button" data-mode="help">Help</button>
+      <a class="topnav-link" href="https://app.prompt.phbeks.com/pricing" rel="noopener">Pricing</a>
+    </nav>
+  </aside>
 
   <!-- ============== HERO ============== -->
   <header class="hero">
@@ -36,11 +99,6 @@
         <p class="hero-sub">Build prompts in a structured R-G-C-B-T-S frame. Learn the technique while you write — local-only, no signup, no tracking.</p>
       </div>
       <div class="hero-meta" aria-live="polite">
-        <div class="mode-toggle" role="tablist" aria-label="Composer mode">
-          <button class="mode-tab is-active" type="button" role="tab" data-mode="single" title="Compose one prompt at a time using R-G-C-B-T-S">Single prompt</button>
-          <button class="mode-tab" type="button" role="tab" data-mode="orchestra" title="Compose a multi-agent orchestration: orchestrator + workers + coordination">Agent orchestra</button>
-          <button class="mode-tab" type="button" role="tab" data-mode="help" title="Educational reference: prompting techniques and orchestration patterns, with sources">Prompt Help</button>
-        </div>
         <div class="slot-meter" title="Structural completeness of the 6 core slots">
           <span id="slotCount" class="slot-count">0 / 6 slots</span>
           <div class="slot-bar"><div id="slotFill" class="slot-fill"></div></div>
@@ -58,8 +116,8 @@
 
    <div id="classicView">
     <!-- ============== TEMPLATES + ARCHAEOLOGY ============== -->
-    <section class="band">
-      <div class="band-label">01 · jump-start</div>
+    <section class="band" id="library">
+      <div class="band-label">01 · library</div>
       <details class="library-card">
         <summary>
           <span>Starter templates</span>
@@ -266,163 +324,93 @@
 
    <!-- ============== ORCHESTRATION VIEW ============== -->
    <div id="orchestrationView" hidden>
-
-    <section class="band">
-      <div class="band-label">01 · jump-start</div>
-      <details class="library-card" open>
-        <summary>
-          <span>Pick a pattern</span>
-          <span class="library-hint">5 canonical orchestration shapes — each seeds defaults you can edit</span>
-        </summary>
-        <div id="patternPicker" class="pattern-grid"></div>
-      </details>
-
-      <details class="library-card">
-        <summary>
-          <span>Orchestra templates</span>
-          <span class="library-hint">Complete starter orchestras (research, pipeline, debate…)</span>
-        </summary>
-        <div id="orchTemplatesList" class="library-list"></div>
-      </details>
-
-      <details class="library-card">
-        <summary>
-          <span>Orchestra archaeology</span>
-          <span class="library-hint">Real multi-agent systems decomposed</span>
-        </summary>
-        <p class="library-blurb">Each entry is a publicly documented orchestration mapped into agents + coordination. Educational only — sources noted per entry.</p>
-        <div id="orchArchaeologyList" class="library-list"></div>
-      </details>
-    </section>
-
-    <section class="composer-grid">
-      <!-- left: orchestra editor -->
-      <div class="composer-form">
-
-        <div class="band-label inline">02 · pattern</div>
-        <div class="field-card">
-          <label class="field-label">
-            <span class="field-name">Active pattern: <span id="orchPatternName">orchestrator-worker</span></span>
-            <span class="field-hint" id="orchPatternBlurb">Lead agent decomposes the task and delegates to specialized workers in parallel.</span>
-          </label>
-          <pre id="orchPatternDiagram" class="pattern-diagram"></pre>
-        </div>
-
-        <div class="band-label inline">03 · agents</div>
-        <div id="orchAgentsList" class="orch-agents-list"></div>
-        <div class="orch-add-row">
-          <button id="orchAddWorkerBtn" type="button" class="link-btn">+ Add worker</button>
-          <span id="orchWorkerCount" class="orch-meta-chip">0 workers</span>
-        </div>
-
-        <div class="band-label inline">04 · coordination</div>
-        <div class="field-card">
-          <div class="orch-coord-row">
-            <label class="field-label">
-              <span class="field-name">Handoff format</span>
-              <span class="field-hint">How workers return results to the orchestrator. <strong>Summary</strong> is recommended — full transcripts pollute the orchestrator's context (15× more tokens).</span>
-            </label>
-            <select id="orchHandoff" class="suggestions-select">
-              <option value="summary">summary (recommended)</option>
-              <option value="json">structured JSON</option>
-              <option value="transcript">full transcript (risky)</option>
-            </select>
-          </div>
-
-          <div class="orch-coord-row">
-            <label class="field-label">
-              <span class="field-name">Max workers: <span id="orchMaxWorkersVal">3</span></span>
-              <span class="field-hint">Above 4 workers, orchestrator context frequently overflows. Keep tight.</span>
-            </label>
-            <input type="range" id="orchMaxWorkers" min="1" max="8" value="3" />
-          </div>
-
-          <div class="orch-coord-row">
-            <label class="field-label" for="orchTermination">
-              <span class="field-name">Termination rule</span>
-              <span class="field-hint">When does the orchestrator stop and synthesize?</span>
-            </label>
-            <textarea id="orchTermination" rows="2" spellcheck="true"
-              placeholder='e.g., "Stop when every worker has returned a summary, or after 2 rounds, whichever first."'></textarea>
-          </div>
-
-          <label class="grade-toggle" title="Workers share a memory store the orchestrator reads, instead of streaming results through the chat.">
-            <input type="checkbox" id="orchSharedMemory" />
-            <span>Workers write to a <strong>shared memory store</strong> (vs chat-only)</span>
-          </label>
-        </div>
-
-        <div class="form-actions">
-          <button id="orchNewBtn" type="button" class="link-btn">New blank orchestra</button>
-          <button id="orchSaveBtn" type="button" class="link-btn">Save draft</button>
-          <button id="orchShareBtn" type="button" class="link-btn">Share link</button>
-        </div>
-      </div>
-
-      <!-- right: live preview -->
-      <aside class="preview-card">
-        <div class="preview-header">
-          <h2>Live preview · bundle</h2>
-          <span id="orchTokenEst" class="token-est" title="Rough estimate (chars ÷ 4). Multiplies fast with worker count.">~0 tokens <span class="token-est-suffix">· rough</span></span>
-        </div>
-        <div class="orch-health-row">
-          <span class="score-label">Orchestra health</span>
-          <span id="orchHealthVal" class="score-val">0</span>
-          <ul id="orchHealthIssues" class="orch-health-issues"></ul>
-        </div>
-        <div class="preview-meta-row">
-          <label class="preview-meta-field">
-            <span class="preview-meta-label">Export as</span>
-            <select id="orchFmtSelect" class="fmt-select" aria-label="Output format">
-              <optgroup label="Prompt bundle">
-                <option value="markdown">Markdown</option>
-                <option value="xml">XML</option>
-              </optgroup>
-              <optgroup label="Anthropic (Claude)">
-                <option value="anthropic-python">Python SDK</option>
-                <option value="anthropic-ts">TypeScript SDK</option>
-                <option value="bedrock-python">AWS Bedrock · Python</option>
-                <option value="bedrock-ts">AWS Bedrock · TypeScript</option>
-                <option value="vertex-python">Vertex AI · Python</option>
-                <option value="vertex-ts">Vertex AI · TypeScript</option>
-              </optgroup>
-              <optgroup label="OpenAI">
-                <option value="openai-python">Python SDK</option>
-                <option value="openai-ts">TypeScript SDK</option>
-              </optgroup>
-              <optgroup label="Google Gemini">
-                <option value="gemini-python">Python SDK</option>
-                <option value="gemini-ts">TypeScript SDK</option>
-              </optgroup>
-            </select>
-          </label>
-          <label class="preview-meta-field">
-            <span class="preview-meta-label">Model</span>
-            <select id="orchModelSelect" class="model-select" aria-label="Target model" hidden></select>
-          </label>
-        </div>
-        <p id="orchFmtCaption" class="fmt-caption">Bundle contains: orchestrator system prompt · each worker system prompt · coordination protocol. Paste each block into the matching agent role in your framework (CrewAI, AutoGen, LangGraph, n8n, raw API).</p>
-        <pre id="orchPreview" class="preview-text" aria-live="polite"></pre>
-        <div class="preview-actions">
-          <button id="orchCopyBtn" class="copy-btn primary" type="button">Copy bundle</button>
-          <button id="orchCopyJsonBtn" class="copy-btn" type="button">Copy as JSON</button>
-        </div>
-        <p class="preview-hint">Local-only. Same encoding as Single mode — never leaves your browser.</p>
-      </aside>
-    </section>
-
-    <section class="drafts-card" id="orchDraftsCard" hidden>
-      <div class="band-label">recent orchestra drafts</div>
-      <div class="drafts-inner">
-        <div class="drafts-header">
-          <h3>Saved on this device</h3>
-          <button id="orchClearDraftsBtn" class="link-btn" type="button">Clear all</button>
-        </div>
-        <ul id="orchDraftsList" class="drafts-list"></ul>
+<!-- BEGIN_TEASER -->
+    <section class="band locked-band">
+      <div class="band-label">agent orchestra · Pro</div>
+      <div class="locked-card">
+        <h2 class="locked-title">Agent Orchestra is a Pro feature</h2>
+        <p class="locked-blurb">Five canonical multi-agent patterns — orchestrator/worker, sequential, parallel, debate, handoff — with per-agent role/goal/context editor, live health scoring, draft sync across devices, and runnable export to Python, TypeScript, AWS Bedrock, Vertex AI, OpenAI, and Gemini SDKs.</p>
+        <ul class="locked-list">
+          <li>5 orchestration patterns + 5 starter templates</li>
+          <li>8-slot agent editor (role · goal · context · bounds · task · success · tools · format)</li>
+          <li>10-rule health score, live token estimate</li>
+          <li>11 export targets, Markdown / XML / runnable code</li>
+          <li>Drafts synced across devices (Pro)</li>
+        </ul>
+        <p class="locked-cta">
+          <a class="cta-button" href="https://app.prompt.phbeks.com/pricing" rel="noopener">See pricing</a>
+          <a class="cta-link" href="https://app.prompt.phbeks.com">Sign in to unlock &rarr;</a>
+        </p>
       </div>
     </section>
-
+<!-- END_TEASER -->
    </div><!-- /#orchestrationView -->
+
+   <!-- ============== AGENT TOOLS VIEW ============== -->
+   <div id="toolsView" hidden>
+    <section class="band locked-band">
+      <div class="band-label">agent tools · Pro</div>
+      <div class="locked-card">
+        <h2 class="locked-title">Agent Tool Builder is a Pro feature</h2>
+        <p class="locked-blurb">Compose typed, validated function-calling tool definitions for the Anthropic Messages API — guided by Anthropic&rsquo;s own tool-writing conventions. Build the schema, see the JSON live, catch errors before they reach the API, and save tools to reuse across prompts.</p>
+        <ul class="locked-list">
+          <li>Guided builder for <code>name</code> · <code>description</code> · <code>input_schema</code> definitions</li>
+          <li>Live JSON preview with hard schema validation (name regex, required fields, example checks)</li>
+          <li>Parameter editor — strings, numbers, enums, arrays, and more</li>
+          <li>Strict-mode toggle + namespacing &amp; description guidance</li>
+          <li>Reusable library synced across devices, send-to-Evaluator (Pro)</li>
+        </ul>
+        <p class="locked-cta">
+          <a class="cta-button" href="https://app.prompt.phbeks.com/pricing" rel="noopener">See pricing</a>
+          <a class="cta-link" href="https://app.prompt.phbeks.com">Sign in to unlock &rarr;</a>
+        </p>
+      </div>
+    </section>
+   </div><!-- /#toolsView -->
+
+   <!-- ============== CONTEXT PIPELINE VIEW ============== -->
+   <div id="contextView" hidden>
+    <section class="band locked-band">
+      <div class="band-label">context pipeline · Pro</div>
+      <div class="locked-card">
+        <h2 class="locked-title">Context Pipeline is a Pro feature</h2>
+        <p class="locked-blurb">Budget the context window like RAM. Allocate tokens per source, set eviction triggers, plan history compaction, and define hand-off rules — then export a runnable spec or framework scaffolding for your agent.</p>
+        <ul class="locked-list">
+          <li>Per-source token budgets with a live window meter</li>
+          <li>Eviction triggers + history-compaction strategy</li>
+          <li>Hand-off / sub-agent context rules</li>
+          <li>Model-aware windows (Claude · GPT · Gemini)</li>
+          <li>Export a spec or framework scaffolding (Pro)</li>
+        </ul>
+        <p class="locked-cta">
+          <a class="cta-button" href="https://app.prompt.phbeks.com/pricing" rel="noopener">See pricing</a>
+          <a class="cta-link" href="https://app.prompt.phbeks.com">Sign in to unlock &rarr;</a>
+        </p>
+      </div>
+    </section>
+   </div><!-- /#contextView -->
+
+   <!-- ============== AI EVAL VIEW ============== -->
+   <div id="evalView" hidden>
+    <section class="band locked-band">
+      <div class="band-label">ai eval · Pro</div>
+      <div class="locked-card">
+        <h2 class="locked-title">AI Eval is a Pro feature</h2>
+        <p class="locked-blurb">Run your prompt through a meta-LLM and get structured feedback: rewrite it for clarity, score it against R-G-C-B-T-S, spellcheck it, or validate its code blocks — all with your own API key (BYOK), routed straight to the provider.</p>
+        <ul class="locked-list">
+          <li>4 modes: rewrite · score R-G-C-B-T-S · spellcheck · code-check</li>
+          <li>Bring your own key — Anthropic, OpenAI, or Google</li>
+          <li>Structured results; copy as Markdown or plain text</li>
+          <li>Send a composed prompt straight from Compose to Eval</li>
+          <li>Save rewrites back to Composer drafts (Pro)</li>
+        </ul>
+        <p class="locked-cta">
+          <a class="cta-button" href="https://app.prompt.phbeks.com/pricing" rel="noopener">See pricing</a>
+          <a class="cta-link" href="https://app.prompt.phbeks.com">Sign in to unlock &rarr;</a>
+        </p>
+      </div>
+    </section>
+   </div><!-- /#evalView -->
 
    <!-- ============== HELP / EDUCATIONAL VIEW ============== -->
    <div id="helpView" hidden>
@@ -442,10 +430,7 @@
         <ol class="help-toc">
           <li><a href="#help-foundations">§1 — Foundations: why structure beats prose</a></li>
           <li><a href="#help-single">§2 — Single-prompt techniques (11)</a></li>
-          <li><a href="#help-orchestra">§3 — Agent orchestration patterns (7)</a></li>
-          <li><a href="#help-code">§4 — Prompts as code: the system / user split</a></li>
-          <li><a href="#help-escalate">§5 — When to escalate single → orchestra</a></li>
-          <li><a href="#help-sources">§6 — Sources</a></li>
+          <li><a href="#help-orchestra">§3-§6 — Orchestration · prompts-as-code · escalation · sources <span class="toc-pro">Pro</span></a></li>
         </ol>
       </details>
     </section>
@@ -635,264 +620,22 @@ call_3: write report using verdicts.json</pre>
     </section>
 
     <!-- §3 Orchestration patterns -->
-    <section class="help-section" id="help-orchestra">
-      <div class="band-label">§3 · agent orchestration patterns</div>
-      <h3 class="help-h3">Seven shapes a multi-agent system can take</h3>
+    <!-- §3-§6 — locked behind Pro -->
+    <section class="help-section locked-help" id="help-orchestra">
+      <div class="band-label">§3-§6 · Pro</div>
+      <h3 class="help-h3">Orchestration · prompts-as-code · escalation · sources</h3>
       <p class="help-section-blurb">
-        Each pattern names a topology (who talks to whom) and a termination rule (when the system stops).
-        Most production systems combine two or three — e.g. an orchestrator-worker whose orchestrator
-        runs an internal reflection loop.
+        The remaining four sections cover the multi-agent toolkit: seven orchestration patterns (orchestrator/worker, sequential, parallel, debate, evaluator-optimizer, hierarchical, reflection), provider-specific system-prompt conventions across Anthropic / OpenAI / Gemini SDKs, the single→multi-agent escalation checklist with Anthropic's ~15× cost data, and curated primary-source references.
       </p>
-
-      <div class="help-cards">
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Orchestrator-worker</h4>
-            <span class="help-cite">Anthropic · 2024</span>
-          </header>
-          <p><strong>Shape:</strong> A central LLM (orchestrator) inspects the task, dynamically decomposes it into subtasks, and dispatches each to a worker LLM with its own context window. Workers return structured results that the orchestrator synthesizes. The orchestrator decides when the result satisfies the brief.</p>
-          <p class="help-when"><strong>When to use:</strong> Subtasks cannot be enumerated up front — e.g. a research question whose sub-queries depend on what the first searches return.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> The orchestrator over-spawns redundant workers (or workers duplicate work) because there is no shared scratchpad, inflating token cost without adding coverage.</p>
-          <div class="help-tip">
-            <span class="help-tip-label">Coordination prompt — decomposition</span>
-            <pre class="help-example">Decompose into independent subtasks. Pick a worker for each from:
-RESEARCHER, WRITER, REVIEWER.
-Respond ONLY as JSON: [{"worker": "&lt;name&gt;", "brief": "&lt;text&gt;"}].</pre>
-            <span class="help-tip-foot">Pair with <a href="#help-single">schema-constrained generation</a> in production — <code>json.loads</code> on a free-form LLM response is a flaky bug magnet.</span>
-          </div>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">picker name: orchestrator-worker</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Sequential pipeline</h4>
-            <span class="help-cite">Anthropic · 2024</span>
-          </header>
-          <p><strong>Shape:</strong> A fixed DAG where each step is an LLM call whose input is the previous step's output, often with deterministic gates (validators, parsers, regex) between steps that can short-circuit the chain. Ends when the last node returns; no agent decides to stop.</p>
-          <p class="help-when"><strong>When to use:</strong> The task decomposes cleanly into a known sequence of subtasks and you'll trade latency for higher per-step accuracy.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> An error in an early step (hallucinated entity, malformed outline) propagates and is amplified by every downstream step — no node ever revisits earlier output.</p>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">picker name: sequential</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Parallel fan-out <span class="help-card-alt">· map-reduce</span></h4>
-            <span class="help-cite">LangGraph docs · 2025</span>
-          </header>
-          <p><strong>Shape:</strong> A coordinator emits N independent calls (sectioning over different inputs, or voting over the same input) that execute concurrently; a reducer aggregates by concatenation, majority vote, or a final synthesizer LLM. Termination: once all branches return, the reducer fires.</p>
-          <p class="help-when"><strong>When to use:</strong> Unit count is known or computable from state (summarize each of 40 docs, screen a prompt with K guardrail checks) and units are independent.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> Branches that should share context (cross-document deduplication) can't see each other, so the reducer inherits inconsistencies no single branch could detect.</p>
-          <p class="help-source"><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph — graph API (Send / map-reduce) ↗</a> · <span class="help-card-alt">picker name: parallel</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Debate <span class="help-card-alt">· multi-agent argumentation</span></h4>
-            <span class="help-cite">Du et al. · 2023</span>
-          </header>
-          <p><strong>Shape:</strong> Two or more LLM instances generate independent answers to the same prompt, then over R rounds each agent reads the others' previous-round responses and updates its own. Final answers are aggregated by majority vote or a consensus pass — no external judge required.</p>
-          <p class="help-when"><strong>When to use:</strong> Factual or reasoning tasks where a single chain-of-thought is unreliable and exposure to a peer's counter-argument empirically pulls answers toward truth (math word problems, factual QA).</p>
-          <p class="help-fail"><strong>Failure mode:</strong> Confidently-wrong agents anchor the group. In long debates, models converge on a shared <em>incorrect</em> answer — more rounds make accuracy worse, not better.</p>
-          <div class="help-tip">
-            <span class="help-tip-label">Coordination prompt — per round</span>
-            <pre class="help-example">Task: {task}
-
-Peer answers:
-# AgentA
-{peer_a_answer}
-# AgentB
-{peer_b_answer}
-
-Update your answer in light of the peers.</pre>
-            <span class="help-tip-foot">Cap rounds at 2–3. Past that, accuracy regresses (groupthink).</span>
-          </div>
-          <p class="help-source"><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Improving Factuality through Multiagent Debate ↗</a> · <span class="help-card-alt">picker name: group-chat</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Evaluator-optimizer loop</h4>
-            <span class="help-cite">Anthropic · 2024</span>
-          </header>
-          <p><strong>Shape:</strong> A generator LLM produces a candidate; a separate evaluator LLM (or rubric-prompted call) scores it against explicit criteria and returns feedback; the generator regenerates conditioned on that feedback. Loop ends when the evaluator returns "accept" or a max-iteration cap is hit.</p>
-          <p class="help-when"><strong>When to use:</strong> You can articulate evaluation criteria clearly enough that the evaluator's feedback measurably improves the next draft — literary translation, code that must pass a stated spec.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> Evaluator and generator collude on a shared blind spot (both miss the same class of error), so the loop terminates at a confident but wrong "accept."</p>
-          <p class="help-source"><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents ↗</a> · <span class="help-card-alt">not in the picker — implement with prompt chaining</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Hierarchical <span class="help-card-alt">· supervisor of supervisors</span></h4>
-            <span class="help-cite">LangGraph · 2025</span>
-          </header>
-          <p><strong>Shape:</strong> A tree where a top-level supervisor routes work to mid-level supervisors, each routing to its own worker pool; control returns up the tree via explicit handoff tools. The top-level supervisor emits the final answer by routing to a <code>FINISH</code> sentinel. Each supervisor sees only its own team's traffic.</p>
-          <p class="help-when"><strong>When to use:</strong> Enough specialized teams (research, writing, ops) that giving one supervisor direct access to every worker would blow its context budget and degrade routing.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> Information needed across teams (a constraint research discovered) gets compressed into the inter-supervisor handoff and is lost before reaching the team that needed it.</p>
-          <div class="help-tip">
-            <span class="help-tip-label">Coordination prompt — routing</span>
-            <pre class="help-example">User input: {input}
-
-Route to ONE of: BILLING, SUPPORT, ENGINEERING.
-Respond with just the route name.</pre>
-            <span class="help-tip-foot">Keep the response space tiny so a string-equality check works. Richer dispatch (parallel, conditional fan-out) is orchestrator-worker territory.</span>
-          </div>
-          <p class="help-source"><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">langgraph-supervisor-py ↗</a> · <span class="help-card-alt">picker name: handoff</span></p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Reflection / critic loop <span class="help-card-alt">· single-agent</span></h4>
-            <span class="help-cite">Shinn et al. · 2023</span>
-          </header>
-          <p><strong>Shape:</strong> One agent attempts the task, receives an external feedback signal (test, tool error, reward, or self-generated critique), writes a short verbal reflection on what went wrong, stores it in an episodic memory buffer, and re-attempts with the reflection prepended. Ends on success or trial-count exhaustion.</p>
-          <p class="help-when"><strong>When to use:</strong> Tasks with a cheap, reliable success signal per attempt (unit tests, environment reward, retrieval verification) where the same model can plausibly fix its own mistake once it is named.</p>
-          <p class="help-fail"><strong>Failure mode:</strong> Without a grounded external signal, self-critique is no more reliable than the original answer — the agent rationalizes the wrong answer or flips a correct one under self-doubt.</p>
-          <p class="help-source"><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Reflexion: Verbal Reinforcement Learning ↗</a> · <span class="help-card-alt">not in the picker — implement with prompt chaining</span></p>
-        </article>
-
-      </div>
-    </section>
-
-    <!-- §4 Prompts as code -->
-    <section class="help-section" id="help-code">
-      <div class="band-label">§4 · prompts as code</div>
-      <h3 class="help-h3">The system / user message split</h3>
-      <p class="help-section-blurb">
-        Pasting a prompt into a chat window is one thing. Sending it through an SDK is another —
-        and the decision that dominates is which slots become the <strong>system</strong> parameter and which become the <strong>user</strong> message.
-        Get it wrong and your role bleeds into the input, or every call re-pays the framing cost.
+      <p class="locked-cta">
+        <a class="cta-button" href="https://app.prompt.phbeks.com/pricing" rel="noopener">See pricing</a>
+        <a class="cta-link" href="https://app.prompt.phbeks.com">Sign in to unlock &rarr;</a>
       </p>
-
-      <div class="help-cards">
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>One-shot prompt</h4>
-            <span class="help-cite">single artifact</span>
-          </header>
-          <p>Everything (Role + Goal + Context + Bounds + Task + Success) goes into the <strong>user message</strong>. The model gets one big instruction and responds once. Simple, portable, and the natural shape when you're pasting the result somewhere or running a single call.</p>
-          <p class="help-when"><strong>When to use:</strong> ad-hoc analyses, one-time generations, anywhere "the prompt" and "the call" are the same artifact.</p>
-          <p class="help-when"><strong>Trade-off:</strong> every call re-pays the framing tokens. No prompt-cache benefit on providers that have one.</p>
-          <p class="help-source">Composer's <strong>Single mode</strong> export does exactly this — try it: switch to Single, fill any frame, then Export as Python.</p>
-        </article>
-
-        <article class="help-card">
-          <header class="help-card-head">
-            <h4>Persistent agent</h4>
-            <span class="help-cite">stable role · variable input</span>
-          </header>
-          <p>Role and stable framing → <strong>system prompt</strong>. The dynamic per-call input → <strong>user message</strong>. Each agent's identity is fixed; only what it's being asked to do this turn changes. This is the right shape for any system that calls the same agent more than once.</p>
-          <p class="help-when"><strong>When to use:</strong> multi-agent orchestras, chat assistants, anything where the role outlives a single call.</p>
-          <p class="help-when"><strong>Trade-off:</strong> needs a coordination layer to decide what user-message each call gets. More moving parts than a one-shot.</p>
-          <p class="help-source">Composer's <strong>Agent orchestra</strong> export does this — each agent becomes a <code>*_SYSTEM</code> constant; the coordination loop feeds the user messages.</p>
-        </article>
-      </div>
-
-      <h4 class="help-sources-h4">Provider quirks worth knowing</h4>
-      <ul class="help-checklist">
-        <li><strong>Anthropic (Claude SDK · Bedrock · Vertex):</strong> dedicated <code>system</code> parameter, sibling to <code>messages</code>. System content is <em>not</em> a message.</li>
-        <li><strong>OpenAI:</strong> system is a message with <code>role: "system"</code>, conventionally first in the <code>messages</code> array.</li>
-        <li><strong>Gemini (google-genai):</strong> system goes into <code>config.system_instruction</code> (Python) / <code>config.systemInstruction</code> (TS) — <em>not</em> inside <code>contents</code>.</li>
-      </ul>
-
-      <p class="help-counter"><strong>Failure mode:</strong> dumping a role-laden prompt into the user message of a persistent-agent setup. The model treats your role description as a one-time instruction; subsequent turns drift back to default behavior. If the role matters across calls, it belongs in the system slot.</p>
-    </section>
-
-    <!-- §5 Escalation checklist -->
-    <section class="help-section" id="help-escalate">
-      <div class="band-label">§5 · escalation</div>
-      <h3 class="help-h3">When to escalate single → orchestra</h3>
-      <p class="help-section-blurb">
-        Multi-agent systems are not a default upgrade. Anthropic's multi-agent research write-up measured
-        them consuming roughly <strong>15× the tokens</strong> of a chat interaction — token usage alone
-        explained ~80% of performance variance in their evaluation. Only escalate when the task
-        genuinely needs more capacity than one context window can hold.
-      </p>
-
-      <ul class="help-checklist">
-        <li>Required source material exceeds what one context window can hold even with retrieval — work must be sharded across separate windows to fit.</li>
-        <li>The task is naturally breadth-first: pursue several independent leads in parallel rather than one chain end-to-end.</li>
-        <li>Multiple distinct, complex tool integrations are needed (search + code + database + filesystem) and one agent's tool-selection accuracy degrades when the roster gets too large.</li>
-        <li>The expected dollar value of the answer absorbs an order-of-magnitude token premium over a single chat.</li>
-        <li>Subtask outputs are large artifacts (reports, code, datasets) better written to a shared store than threaded back through conversation history.</li>
-      </ul>
-
-      <p class="help-counter"><strong>Counter-indicators (stay single-prompt):</strong> the task requires all agents to share the same evolving context, depends on tight real-time coordination, or the per-call latency budget is small.</p>
-
-      <h4 class="help-sources-h4">Right-size your workers</h4>
-      <p>The 15× isn't a fixed cost — it's a budget you can allocate. Two practical levers:</p>
-      <ul class="help-checklist">
-        <li><strong>Strongest model on the decision points</strong> — orchestrator, evaluator, supervisor. These calls are few but expensive to get wrong; a bad decomposition cascades into wasted worker calls.</li>
-        <li><strong>Cheapest viable model on the workers</strong> — parallel research, summarization, formatting. These calls are many; a 10× cheaper model that's 95% as good is the right tradeoff.</li>
-      </ul>
-      <p>Concretely: a frontier reasoning model on the orchestrator, a small/fast model on the workers. Composer's Orchestra export emits one model per call site, so a real production rig runs them on separate models.</p>
-
-      <blockquote class="help-quote">
-        Agents typically use about 4× more tokens than chat interactions, and multi-agent systems use about 15× more tokens than chats.
-        <cite>— Anthropic, "How we built our multi-agent research system"</cite>
-      </blockquote>
-      <blockquote class="help-quote">
-        Once intelligence reaches a threshold, multi-agent systems become a vital way to scale performance.
-        <cite>— Anthropic, "How we built our multi-agent research system"</cite>
-      </blockquote>
-
-      <p>
-        On handoff: Anthropic recommends having subagents write structured outputs to a filesystem and
-        pass <em>lightweight references</em> back to the lead agent rather than threading full transcripts
-        through history — explicitly to "minimize the game of telephone" and avoid copying large outputs
-        through the conversation. Composer's Agent orchestra mode defaults to <code>summary</code> handoff
-        for exactly this reason.
-      </p>
-
-      <p class="help-cta">
-        Ready to compose one? Switch to
-        <button class="help-jump" type="button" data-jump-mode="orchestra">Agent orchestra</button>.
-      </p>
-    </section>
-
-    <!-- §6 Sources -->
-    <section class="help-section" id="help-sources">
-      <div class="band-label">§6 · sources</div>
-      <h3 class="help-h3">Every URL cited above</h3>
-      <p class="help-section-blurb">All links fetched live during research. If a link rots, the citation (author · year · title) is enough to find a current mirror.</p>
-
-      <h4 class="help-sources-h4">Single-prompt techniques</h4>
-      <ul class="help-sources-list">
-        <li><a href="https://arxiv.org/abs/2005.14165" target="_blank" rel="noopener">Brown et al., 2020 — Language Models are Few-Shot Learners (GPT-3)</a></li>
-        <li><a href="https://arxiv.org/abs/2201.11903" target="_blank" rel="noopener">Wei et al., 2022 — Chain-of-Thought Prompting Elicits Reasoning</a></li>
-        <li><a href="https://arxiv.org/abs/2203.11171" target="_blank" rel="noopener">Wang et al., 2022 — Self-Consistency Improves CoT Reasoning</a></li>
-        <li><a href="https://arxiv.org/abs/2305.10601" target="_blank" rel="noopener">Yao et al., 2023 — Tree of Thoughts</a></li>
-        <li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">Yao et al., 2022 — ReAct: Synergizing Reasoning and Acting</a></li>
-        <li><a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">Shinn et al., 2023 — Reflexion: Verbal Reinforcement Learning</a></li>
-        <li><a href="https://arxiv.org/abs/2309.04269" target="_blank" rel="noopener">Adams et al., 2023 — Chain of Density Summarization</a></li>
-        <li><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts" target="_blank" rel="noopener">Anthropic — Prompting best practices (system prompts / role)</a></li>
-        <li><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts" target="_blank" rel="noopener">Anthropic — Chain complex prompts</a></li>
-        <li><a href="https://openai.com/index/introducing-structured-outputs-in-the-api/" target="_blank" rel="noopener">OpenAI — Introducing Structured Outputs in the API (2024)</a></li>
-      </ul>
-
-      <h4 class="help-sources-h4">Orchestration patterns &amp; multi-agent</h4>
-      <ul class="help-sources-list">
-        <li><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Schluntz &amp; Zhang, 2024 — Building effective agents (Anthropic)</a></li>
-        <li><a href="https://www.anthropic.com/engineering/built-multi-agent-research-system" target="_blank" rel="noopener">Anthropic, 2025 — How we built our multi-agent research system</a></li>
-        <li><a href="https://arxiv.org/abs/2305.14325" target="_blank" rel="noopener">Du et al., 2023 — Improving Factuality through Multiagent Debate</a></li>
-        <li><a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api" target="_blank" rel="noopener">LangGraph docs — Use the graph API (Send / map-reduce)</a></li>
-        <li><a href="https://github.com/langchain-ai/langgraph-supervisor-py" target="_blank" rel="noopener">LangChain — langgraph-supervisor-py (hierarchical / supervisor)</a></li>
-      </ul>
-
-      <h4 class="help-sources-h4">Provider SDK references (§4)</h4>
-      <ul class="help-sources-list">
-        <li><a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noopener">Anthropic Messages API — <code>system</code> parameter</a></li>
-        <li><a href="https://platform.openai.com/docs/api-reference/chat" target="_blank" rel="noopener">OpenAI Chat Completions — <code>role: "system"</code> message</a></li>
-        <li><a href="https://ai.google.dev/gemini-api/docs/text-generation" target="_blank" rel="noopener">Google Gemini — <code>system_instruction</code> on GenerateContentConfig</a></li>
-      </ul>
-
       <p class="help-foot">
-        Maintained alongside the Composer at
+        Free composer is open-source at
         <a href="https://github.com/deokman420/prompt-composer" target="_blank" rel="noopener">github.com/deokman420/prompt-composer ↗</a>.
-        Spot a stale source or a missing technique? Open an issue.
       </p>
     </section>
-
    </div><!-- /#helpView -->
   </main>
 
@@ -905,9 +648,11 @@ Respond with just the route name.</pre>
         <span id="lifetimeCount" class="footer-count">0 prompts crafted</span>
       </div>
       <div class="footer-row footer-meta">
-        <span class="footer-disclaimer">Local-only — your prompts, drafts, and shared links never reach any server. No tracking, no analytics, no AI calls.</span>
+        <span class="footer-disclaimer">This composer runs entirely in your browser — your prompts, drafts, and share links stay on this device (drafts in localStorage, share links encoded in the URL fragment, which browsers never transmit). No analytics, no tracking pixels, no AI calls from this page. The page loads Inter and JetBrains Mono from Google Fonts, which is the only third-party request.</span>
         <span class="footer-links">
-          <a href="LICENSE">MIT licensed</a>
+          <a href="LICENSE">Free composer · MIT</a>
+          ·
+          <a href="https://app.prompt.phbeks.com/pricing#privacy" rel="noopener">What changes if you sign in &rarr;</a>
           ·
           <a href="https://github.com/deokman420/prompt-composer" target="_blank" rel="noopener" class="footer-gh">
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -918,7 +663,7 @@ Respond with just the route name.</pre>
     </div>
   </footer>
 
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=19" defer></script>
 
   <!-- ============== EASTER EGG ============== -->
   <script>
